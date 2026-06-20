@@ -1,0 +1,105 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+const (
+	defaultTrialCreditMicroCNY = int64(10_000_000)
+	defaultTrialCreditTTLDays  = 7
+)
+
+type Config struct {
+	Env         string
+	HTTPAddr    string
+	DatabaseDSN string
+	AuthPepper  string
+	TrialCredit TrialCreditConfig
+}
+
+type TrialCreditConfig struct {
+	AmountMicroCNY int64
+	TTLDays        int
+}
+
+func Load() (Config, error) {
+	env := normalizeEnv(envOrDefault("PORTAL_ENV", "development"))
+	authPepper := os.Getenv("PORTAL_AUTH_PEPPER")
+	if authPepper == "" && env != "production" {
+		authPepper = "dev-auth-pepper"
+	}
+
+	trialCredit, err := loadTrialCreditConfig()
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Config{
+		Env:         env,
+		HTTPAddr:    envOrDefault("PORTAL_HTTP_ADDR", ":8080"),
+		DatabaseDSN: os.Getenv("PORTAL_DATABASE_DSN"),
+		AuthPepper:  authPepper,
+		TrialCredit: trialCredit,
+	}, nil
+}
+
+func loadTrialCreditConfig() (TrialCreditConfig, error) {
+	amount, err := int64EnvOrDefault("PORTAL_TRIAL_CREDIT_MICRO_CNY", defaultTrialCreditMicroCNY)
+	if err != nil {
+		return TrialCreditConfig{}, err
+	}
+	if amount < 0 {
+		return TrialCreditConfig{}, fmt.Errorf("PORTAL_TRIAL_CREDIT_MICRO_CNY must be greater than or equal to zero")
+	}
+
+	ttlDays, err := intEnvOrDefault("PORTAL_TRIAL_CREDIT_TTL_DAYS", defaultTrialCreditTTLDays)
+	if err != nil {
+		return TrialCreditConfig{}, err
+	}
+	if ttlDays <= 0 {
+		return TrialCreditConfig{}, fmt.Errorf("PORTAL_TRIAL_CREDIT_TTL_DAYS must be greater than zero")
+	}
+
+	return TrialCreditConfig{
+		AmountMicroCNY: amount,
+		TTLDays:        ttlDays,
+	}, nil
+}
+
+func int64EnvOrDefault(key string, fallback int64) (int64, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func intEnvOrDefault(key string, fallback int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	}
+	return parsed, nil
+}
+
+func envOrDefault(key string, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func normalizeEnv(env string) string {
+	return strings.ToLower(strings.TrimSpace(env))
+}
