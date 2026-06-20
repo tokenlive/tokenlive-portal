@@ -39,7 +39,7 @@
 - Modify: `backend/cmd/portal-worker/main.go`
 - Modify: `backend/cmd/portal-api/main_test.go`
 
-- [ ] **Step 1: Write failing config tests**
+- [x] **Step 1: Write failing config tests**
 
 Add these tests to `backend/internal/config/config_test.go`:
 
@@ -104,7 +104,7 @@ func TestLoadTrialCreditRejectsInvalidTTL(t *testing.T) {
 
 Update the existing tests in the same file to call `got, err := Load()` and assert `err == nil`.
 
-- [ ] **Step 2: Run config tests and verify they fail**
+- [x] **Step 2: Run config tests and verify they fail**
 
 Run:
 
@@ -114,7 +114,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/config -count=1
 
 Expected: compile fails because `Load()` still returns one value and `Config.TrialCredit` does not exist.
 
-- [ ] **Step 3: Implement config parsing**
+- [x] **Step 3: Implement config parsing**
 
 Replace `backend/internal/config/config.go` with this shape, keeping existing environment behavior:
 
@@ -226,7 +226,7 @@ func normalizeEnv(env string) string {
 }
 ```
 
-- [ ] **Step 4: Update command startup callers**
+- [x] **Step 4: Update command startup callers**
 
 In `backend/cmd/portal-api/main.go`, replace:
 
@@ -261,7 +261,7 @@ newPortalConsoleService = api.NewConsoleService
 
 Keep names unchanged now; later tasks will update signatures.
 
-- [ ] **Step 5: Update existing config tests**
+- [x] **Step 5: Update existing config tests**
 
 In existing config tests, change calls from:
 
@@ -280,7 +280,7 @@ if err != nil {
 
 Add `strings` to the test imports for the invalid-env assertions.
 
-- [ ] **Step 6: Run config tests**
+- [x] **Step 6: Run config tests**
 
 Run:
 
@@ -299,7 +299,7 @@ Expected: PASS.
 - Modify: `backend/internal/repository/auth_test.go`
 - Modify: `backend/internal/repository/billing.go`
 
-- [ ] **Step 1: Write failing repository test for new-user trial grant**
+- [x] **Step 1: Write failing repository test for new-user trial grant**
 
 Add this test to `backend/internal/repository/auth_test.go`:
 
@@ -375,7 +375,7 @@ func TestCompleteEmailLoginGrantsTrialCreditForNewDefaultWorkspace(t *testing.T)
 
 Add `strings` to imports.
 
-- [ ] **Step 2: Write failing repository test for existing-user login**
+- [x] **Step 2: Write failing repository test for existing-user login**
 
 Add:
 
@@ -455,7 +455,7 @@ func TestCompleteEmailLoginDoesNotGrantTrialCreditForExistingUser(t *testing.T) 
 }
 ```
 
-- [ ] **Step 3: Write failing repository test for disabled trial amount**
+- [x] **Step 3: Write failing repository test for disabled trial amount**
 
 Add:
 
@@ -512,7 +512,7 @@ func TestCompleteEmailLoginSkipsTrialCreditWhenAmountIsZero(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run repository tests and verify they fail**
+- [x] **Step 4: Run repository tests and verify they fail**
 
 Run:
 
@@ -522,7 +522,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/repository -run 'TestComp
 
 Expected: compile fails because `TrialCreditInput` and `CompleteEmailLoginInput.TrialCredit` do not exist.
 
-- [ ] **Step 5: Add repository trial input types**
+- [x] **Step 5: Add repository trial input types**
 
 In `backend/internal/repository/auth.go`, add:
 
@@ -549,7 +549,7 @@ type emailUserWorkspaceResult struct {
 }
 ```
 
-- [ ] **Step 6: Refactor find-or-create to return Workspace creation state**
+- [x] **Step 6: Refactor find-or-create to return Workspace creation state**
 
 Change `findOrCreateEmailUserForUpdate` to return `emailUserWorkspaceResult`.
 
@@ -586,7 +586,7 @@ if created.CreatedWorkspace {
 }
 ```
 
-- [ ] **Step 7: Implement transaction-local trial grant**
+- [x] **Step 7: Implement transaction-local trial grant**
 
 In `backend/internal/repository/billing.go`, add a private helper:
 
@@ -650,7 +650,7 @@ func grantTrialCreditInTx(tx *gorm.DB, workspaceID string, now time.Time, input 
 
 If `datatypes.NewJSONType(...).MarshalJSON()` is awkward with the installed GORM version, use `encoding/json.Marshal` and cast to `datatypes.JSON`.
 
-- [ ] **Step 8: Extract shared ledger mutation helper**
+- [x] **Step 8: Extract shared ledger mutation helper**
 
 In `backend/internal/repository/billing.go`, move the body of `CreateLedgerEntry`'s transaction into:
 
@@ -683,7 +683,7 @@ func (r *Repositories) CreateLedgerEntry(ctx context.Context, input CreateLedger
 
 The helper must preserve the existing duplicate-idempotency behavior and balance update semantics exactly.
 
-- [ ] **Step 9: Run repository trial tests**
+- [x] **Step 9: Run repository trial tests**
 
 Run:
 
@@ -703,7 +703,7 @@ Expected: PASS.
 - Modify: `backend/cmd/portal-api/main.go`
 - Modify: `backend/cmd/portal-api/main_test.go`
 
-- [ ] **Step 1: Write failing auth service test**
+- [x] **Step 1: Write failing auth service test**
 
 In `backend/internal/api/auth_service_test.go`, find the fake store that records `CompleteEmailLoginInput`. Add this assertion to the successful verify-email-login test:
 
@@ -731,7 +731,7 @@ Add the import:
 "github.com/tokenlive/tokenlive-portal/backend/internal/config"
 ```
 
-- [ ] **Step 2: Run auth service tests and verify they fail**
+- [x] **Step 2: Run auth service tests and verify they fail**
 
 Run:
 
@@ -741,7 +741,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/api -run 'TestAuth.*|Test
 
 Expected: compile fails because `newAuthService` does not accept trial config.
 
-- [ ] **Step 3: Update AuthService constructor signatures**
+- [x] **Step 3: Update AuthService constructor signatures**
 
 In `backend/internal/api/auth_service.go`, add to `authService`:
 
@@ -792,7 +792,7 @@ func newAuthService(store authServiceStore, env string, authPepper string, trial
 }
 ```
 
-- [ ] **Step 4: Pass trial config into repository login completion**
+- [x] **Step 4: Pass trial config into repository login completion**
 
 In `VerifyEmailLogin`, add:
 
@@ -805,7 +805,7 @@ TrialCredit: repository.TrialCreditInput{
 
 to `repository.CompleteEmailLoginInput`.
 
-- [ ] **Step 5: Update command wiring**
+- [x] **Step 5: Update command wiring**
 
 In `backend/cmd/portal-api/main.go`, change seam type inference by using the new constructor signature:
 
@@ -821,7 +821,7 @@ newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, _ co
 }
 ```
 
-- [ ] **Step 6: Update auth service tests to use default trial config helper**
+- [x] **Step 6: Update auth service tests to use default trial config helper**
 
 Where tests call `newAuthService(store, env, pepper)`, update to:
 
@@ -832,7 +832,7 @@ newAuthService(store, env, pepper, config.TrialCreditConfig{
 })
 ```
 
-- [ ] **Step 7: Run auth and main tests**
+- [x] **Step 7: Run auth and main tests**
 
 Run:
 
@@ -850,7 +850,7 @@ Expected: PASS.
 - Modify: `backend/internal/api/console_service.go`
 - Modify: `backend/internal/api/console_service_test.go`
 
-- [ ] **Step 1: Write failing overview service tests**
+- [x] **Step 1: Write failing overview service tests**
 
 Add this test to `backend/internal/api/console_service_test.go`:
 
@@ -927,7 +927,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 
 Add `config` import.
 
-- [ ] **Step 2: Add missing-user and missing-Workspace service tests**
+- [x] **Step 2: Add missing-user and missing-Workspace service tests**
 
 Add:
 
@@ -962,7 +962,7 @@ func TestConsoleServiceOverviewMapsWorkspaceNotFound(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run service tests and verify they fail**
+- [x] **Step 3: Run service tests and verify they fail**
 
 Run:
 
@@ -972,7 +972,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/api -run 'TestConsoleServ
 
 Expected: compile fails because `Overview`, response types, statuses, and the new console constructor signature do not exist.
 
-- [ ] **Step 4: Add overview types and service method**
+- [x] **Step 4: Add overview types and service method**
 
 In `backend/internal/api/console_service.go`, import config:
 
@@ -1031,7 +1031,7 @@ func NewConsoleService(repos *repository.Repositories, authPepper string, trialC
 
 Validate amount and TTL in the constructor like AuthService.
 
-- [ ] **Step 5: Implement Overview**
+- [x] **Step 5: Implement Overview**
 
 Add:
 
@@ -1090,7 +1090,7 @@ Update `workspaceResponseFromRepository`:
 TrialGrantedAt: current.Workspace.TrialGrantedAt,
 ```
 
-- [ ] **Step 6: Update console service tests for constructor signature**
+- [x] **Step 6: Update console service tests for constructor signature**
 
 Replace every:
 
@@ -1107,7 +1107,7 @@ newConsoleService(store, "pepper", config.TrialCreditConfig{
 })
 ```
 
-- [ ] **Step 7: Run console service tests**
+- [x] **Step 7: Run console service tests**
 
 Run:
 
@@ -1127,7 +1127,7 @@ Expected: PASS.
 - Modify: `backend/cmd/portal-api/main.go`
 - Modify: `backend/cmd/portal-api/main_test.go`
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Add to `backend/internal/api/console_test.go`:
 
@@ -1215,7 +1215,7 @@ func TestConsoleOverviewReturnsActivationState(t *testing.T) {
 
 Add `time` import if missing.
 
-- [ ] **Step 2: Update fake console service**
+- [x] **Step 2: Update fake console service**
 
 In `fakeConsoleService`, add:
 
@@ -1234,7 +1234,7 @@ func (f *fakeConsoleService) Overview(_ context.Context, user CurrentUser) (Cons
 }
 ```
 
-- [ ] **Step 3: Run handler tests and verify they fail**
+- [x] **Step 3: Run handler tests and verify they fail**
 
 Run:
 
@@ -1244,7 +1244,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./internal/api -run 'TestConsoleOver
 
 Expected: `/api/console/overview` returns 404 or compile fails because `ConsoleService` has no handler method wired.
 
-- [ ] **Step 4: Register and implement overview handler**
+- [x] **Step 4: Register and implement overview handler**
 
 In `RegisterConsoleRoutes`, add:
 
@@ -1271,7 +1271,7 @@ func (h ConsoleHandler) Overview(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-- [ ] **Step 5: Update command route tests**
+- [x] **Step 5: Update command route tests**
 
 In `backend/cmd/portal-api/main_test.go`, add `/api/console/overview` to the path lists in:
 
@@ -1295,7 +1295,7 @@ func (fakePortalConsoleService) Overview(context.Context, api.CurrentUser) (api.
 }
 ```
 
-- [ ] **Step 6: Update console service command constructor wiring**
+- [x] **Step 6: Update console service command constructor wiring**
 
 In `backend/cmd/portal-api/main.go`, change:
 
@@ -1317,7 +1317,7 @@ newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.Tr
 }
 ```
 
-- [ ] **Step 7: Run API and command tests**
+- [x] **Step 7: Run API and command tests**
 
 Run:
 
@@ -1335,7 +1335,7 @@ Expected: PASS.
 - Modify: `backend/internal/api/console_service_test.go`
 - Modify: `backend/internal/api/console_test.go`
 
-- [ ] **Step 1: Add compatibility assertions**
+- [x] **Step 1: Add compatibility assertions**
 
 In `TestConsoleServiceCurrentWorkspaceMapsBalance`, set:
 
@@ -1365,7 +1365,7 @@ if body.Workspace.TrialGrantedAt == nil {
 }
 ```
 
-- [ ] **Step 2: Run current Workspace tests**
+- [x] **Step 2: Run current Workspace tests**
 
 Run:
 
@@ -1382,7 +1382,7 @@ Expected: PASS.
 **Files:**
 - Modify any Go test or production file still using old constructor signatures.
 
-- [ ] **Step 1: Find stale constructor calls**
+- [x] **Step 1: Find stale constructor calls**
 
 Run:
 
@@ -1396,7 +1396,7 @@ Expected:
 - `NewAuthService` and `newAuthService` pass `config.TrialCreditConfig`.
 - `NewConsoleService` and `newConsoleService` pass `config.TrialCreditConfig`.
 
-- [ ] **Step 2: Run full Go test suite**
+- [x] **Step 2: Run full Go test suite**
 
 Run:
 
@@ -1406,7 +1406,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 3: Fix compile issues from signature churn**
+- [x] **Step 3: Fix compile issues from signature churn**
 
 If tests fail due to old signatures, update the exact call site to pass:
 
@@ -1426,7 +1426,7 @@ if err != nil {
 }
 ```
 
-- [ ] **Step 4: Re-run full Go test suite**
+- [x] **Step 4: Re-run full Go test suite**
 
 Run:
 
@@ -1443,7 +1443,7 @@ Expected: PASS.
 **Files:**
 - Verify only; no source changes expected unless checks reveal a real issue.
 
-- [ ] **Step 1: Format Go code**
+- [x] **Step 1: Format Go code**
 
 Run:
 
@@ -1453,7 +1453,7 @@ gofmt -w backend/cmd/portal-api backend/cmd/portal-worker backend/internal/api b
 
 Expected: command exits successfully with no output.
 
-- [ ] **Step 2: Run full tests**
+- [x] **Step 2: Run full tests**
 
 Run:
 
@@ -1463,7 +1463,7 @@ GOCACHE=/private/tmp/go-build-cache go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 3: Build portal-api**
+- [x] **Step 3: Build portal-api**
 
 Run:
 
@@ -1473,7 +1473,7 @@ GOCACHE=/private/tmp/go-build-cache go build -o /private/tmp/tokenlive-portal-ap
 
 Expected: command exits successfully.
 
-- [ ] **Step 4: Build portal-worker**
+- [x] **Step 4: Build portal-worker**
 
 Run:
 
@@ -1483,7 +1483,7 @@ GOCACHE=/private/tmp/go-build-cache go build -o /private/tmp/tokenlive-portal-wo
 
 Expected: command exits successfully.
 
-- [ ] **Step 5: Scan docs and plan for placeholders**
+- [x] **Step 5: Scan docs and plan for placeholders**
 
 Run:
 
@@ -1493,7 +1493,7 @@ rg -n "T(O)DO|T(B)D|F(I)XME|\\?\\?" docs/specs/2026-06-20-trial-credit-activatio
 
 Expected: no output.
 
-- [ ] **Step 6: Check worktree diff**
+- [x] **Step 6: Check worktree diff**
 
 Run:
 

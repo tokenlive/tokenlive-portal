@@ -23,12 +23,28 @@ func RegisterConsoleRoutes(mux *http.ServeMux, service ConsoleService, auth Auth
 	}
 
 	handler := ConsoleHandler{service: service, auth: auth}
+	mux.HandleFunc("GET /api/console/overview", handler.Overview)
 	mux.HandleFunc("GET /api/workspaces/current", handler.CurrentWorkspace)
 	mux.HandleFunc("GET /api/api-keys", handler.ListAPIKeys)
 	mux.HandleFunc("POST /api/api-keys", handler.CreateAPIKey)
 	mux.HandleFunc("POST /api/api-keys/{id}/enable", handler.EnableAPIKey)
 	mux.HandleFunc("POST /api/api-keys/{id}/disable", handler.DisableAPIKey)
 	mux.HandleFunc("POST /api/api-keys/{id}/revoke", handler.RevokeAPIKey)
+}
+
+func (h ConsoleHandler) Overview(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := h.service.Overview(r.Context(), user)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h ConsoleHandler) CurrentWorkspace(w http.ResponseWriter, r *http.Request) {

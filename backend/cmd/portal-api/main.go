@@ -122,7 +122,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 		return nil, fmt.Errorf("create auth service: %w", err)
 	}
 
-	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper)
+	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper, cfg.TrialCredit)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("create console service: %w", err)

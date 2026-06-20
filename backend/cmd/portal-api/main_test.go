@@ -31,7 +31,7 @@ func TestRegisterDatabaseBackedRoutesDisablesAuthPublicAndConsoleRoutesWithoutDS
 	}
 	cleanup()
 
-	for _, path := range []string{"/api/auth/email/start", "/api/public/models", "/api/workspaces/current", "/api/api-keys"} {
+	for _, path := range []string{"/api/auth/email/start", "/api/public/models", "/api/workspaces/current", "/api/console/overview", "/api/api-keys"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -80,6 +80,7 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 	}{
 		{method: http.MethodGet, path: "/api/public/models"},
 		{method: http.MethodPost, path: "/api/auth/email/start"},
+		{method: http.MethodGet, path: "/api/console/overview"},
 		{method: http.MethodGet, path: "/api/workspaces/current"},
 		{method: http.MethodGet, path: "/api/api-keys"},
 	}
@@ -99,6 +100,12 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 	if capturedPortalAuthTrialCredit.TTLDays != 7 {
 		t.Fatalf("trial ttl = %d, want 7", capturedPortalAuthTrialCredit.TTLDays)
 	}
+	if capturedPortalConsoleTrialCredit.AmountMicroCNY != 10_000_000 {
+		t.Fatalf("console trial amount = %d, want 10000000", capturedPortalConsoleTrialCredit.AmountMicroCNY)
+	}
+	if capturedPortalConsoleTrialCredit.TTLDays != 7 {
+		t.Fatalf("console trial ttl = %d, want 7", capturedPortalConsoleTrialCredit.TTLDays)
+	}
 }
 
 func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *testing.T) {
@@ -112,7 +119,7 @@ func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *
 			return nil
 		}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.TrialCreditConfig) (api.ConsoleService, error) {
 		return nil, errors.New("console constructor failed")
 	}
 
@@ -135,7 +142,7 @@ func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *
 		t.Fatalf("database cleanup was not called")
 	}
 
-	for _, path := range []string{"/api/public/models", "/api/auth/email/start", "/api/workspaces/current", "/api/api-keys"} {
+	for _, path := range []string{"/api/public/models", "/api/auth/email/start", "/api/workspaces/current", "/api/console/overview", "/api/api-keys"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -163,11 +170,13 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		return &repository.Repositories{}
 	}
 	capturedPortalAuthTrialCredit = config.TrialCreditConfig{}
+	capturedPortalConsoleTrialCredit = config.TrialCreditConfig{}
 	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig) (api.AuthService, error) {
 		capturedPortalAuthTrialCredit = trialCredit
 		return fakePortalAuthService{}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig) (api.ConsoleService, error) {
+		capturedPortalConsoleTrialCredit = trialCredit
 		return fakePortalConsoleService{}, nil
 	}
 	registerPortalPublicModelRoutes = func(mux *http.ServeMux, _ api.PublicModelReader) {
@@ -181,6 +190,9 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		})
 	}
 	registerPortalConsoleRoutes = func(mux *http.ServeMux, _ api.ConsoleService, _ api.AuthService) {
+		mux.HandleFunc("GET /api/console/overview", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
 		mux.HandleFunc("GET /api/workspaces/current", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
@@ -201,6 +213,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 }
 
 var capturedPortalAuthTrialCredit config.TrialCreditConfig
+var capturedPortalConsoleTrialCredit config.TrialCreditConfig
 
 type fakePortalAuthService struct{}
 
@@ -221,6 +234,10 @@ func (fakePortalAuthService) Logout(context.Context, string) error {
 }
 
 type fakePortalConsoleService struct{}
+
+func (fakePortalConsoleService) Overview(context.Context, api.CurrentUser) (api.ConsoleOverviewResponse, error) {
+	return api.ConsoleOverviewResponse{}, nil
+}
 
 func (fakePortalConsoleService) CurrentWorkspace(context.Context, api.CurrentUser) (api.CurrentWorkspaceResponse, error) {
 	return api.CurrentWorkspaceResponse{}, nil

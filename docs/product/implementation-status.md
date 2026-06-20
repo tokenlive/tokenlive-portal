@@ -56,6 +56,7 @@ Implemented:
 
 - Passwordless email-code login skeleton.
 - Atomic email-code verification, user/default Workspace creation, session creation, and code consumption.
+- Configurable trial credit grant during first default Workspace registration.
 - Session cookie support.
 - Current-user API.
 - Logout.
@@ -74,6 +75,7 @@ Still pending:
 
 Implemented:
 
+- `GET /api/console/overview`.
 - Current Workspace resolution for the logged-in user.
 - `GET /api/workspaces/current`.
 - `GET /api/api-keys`.
@@ -88,6 +90,7 @@ Implemented:
 - API key state changes are scoped to Workspace.
 - API key state changes write audit logs.
 - Repeated enable, disable, or revoke calls are no-op updates when already in the requested state.
+- Overview activation state for trial credit, API key creation, and first API call placeholder.
 
 Still pending:
 
@@ -97,15 +100,13 @@ Still pending:
 - Workspace switcher.
 - Workspace member and invitation APIs.
 
-## 3. Current In-Progress Slice
-
 ### Trial Credit And Activation Overview
 
 Design spec:
 
 - `docs/specs/2026-06-20-trial-credit-activation-overview-slice-design.md`
 
-Planned:
+Implemented:
 
 - Grant trial credit when registration creates the first default Workspace.
 - Default trial amount: 10 yuan.
@@ -115,7 +116,7 @@ Planned:
 - Add `GET /api/console/overview`.
 - Return activation status for trial credit, API key creation, and first API call.
 
-Not planned in this slice:
+Still pending:
 
 - Runtime trial model whitelist enforcement.
 - Daily trial spend limit enforcement.
@@ -124,7 +125,7 @@ Not planned in this slice:
 - Usage/request-log ingestion.
 - Frontend pages.
 
-## 4. Major Pending Product Areas
+## 3. Major Pending Product Areas
 
 Public website:
 
@@ -179,7 +180,7 @@ Operations and Admin integration:
 - Support ticket processing from `tokenlive-admin`.
 - User and Workspace risk controls from `tokenlive-admin`.
 
-## 5. Deliberately Deferred For First Release
+## 4. Deliberately Deferred For First Release
 
 - Consumer chat Playground.
 - Provider-facing supply-side portal.

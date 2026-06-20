@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/security"
@@ -32,14 +33,16 @@ func TestConsoleCurrentWorkspaceRequiresSession(t *testing.T) {
 func TestConsoleCurrentWorkspaceReturnsWorkspace(t *testing.T) {
 	t.Parallel()
 
+	trialGrantedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	console := &fakeConsoleService{
 		currentWorkspaceResult: CurrentWorkspaceResponse{
 			Workspace: WorkspaceResponse{
-				ID:     "wsp_1",
-				Name:   "Dev",
-				Slug:   "dev",
-				Role:   domain.MemberRoleOwner,
-				Status: domain.WorkspaceStatusActive,
+				ID:             "wsp_1",
+				Name:           "Dev",
+				Slug:           "dev",
+				Role:           domain.MemberRoleOwner,
+				Status:         domain.WorkspaceStatusActive,
+				TrialGrantedAt: &trialGrantedAt,
 				Balance: WorkspaceBalanceResponse{
 					AvailableMicroCNY: 10_000_000,
 					AvailableCNY:      "10.000000",
@@ -67,8 +70,94 @@ func TestConsoleCurrentWorkspaceReturnsWorkspace(t *testing.T) {
 	if body.Workspace.ID != "wsp_1" || body.Workspace.Balance.AvailableCNY != "10.000000" {
 		t.Fatalf("body = %+v", body)
 	}
+	if body.Workspace.TrialGrantedAt == nil || !body.Workspace.TrialGrantedAt.Equal(trialGrantedAt) {
+		t.Fatalf("trial_granted_at = %v, want %v", body.Workspace.TrialGrantedAt, trialGrantedAt)
+	}
 	if auth.currentUserToken != "tl_sess_test" {
 		t.Fatalf("current user token = %q, want %q", auth.currentUserToken, "tl_sess_test")
+	}
+}
+
+func TestConsoleOverviewRequiresSession(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, &fakeConsoleService{}, &fakeAuthService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/console/overview", nil)
+	req.Header.Set("X-Request-ID", "req_console_overview_session")
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	assertAuthErrorResponse(t, rec, string(CodeAuthSessionRequired), "req_console_overview_session")
+}
+
+func TestConsoleOverviewReturnsActivationShape(t *testing.T) {
+	t.Parallel()
+
+	trialGrantedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	trialExpiresAt := trialGrantedAt.AddDate(0, 0, 7)
+	console := &fakeConsoleService{
+		overviewResult: ConsoleOverviewResponse{
+			Workspace: WorkspaceResponse{
+				ID:             "wsp_1",
+				Name:           "Dev",
+				Slug:           "dev",
+				Role:           domain.MemberRoleOwner,
+				Status:         domain.WorkspaceStatusActive,
+				TrialGrantedAt: &trialGrantedAt,
+				Balance: WorkspaceBalanceResponse{
+					AvailableMicroCNY: 10_000_000,
+					AvailableCNY:      "10.000000",
+				},
+			},
+			Activation: ActivationOverviewResponse{
+				TrialCreditGranted: true,
+				TrialExpiresAt:     &trialExpiresAt,
+				APIKeyCreated:      true,
+				FirstCallMade:      false,
+				Steps: []ActivationStepResponse{
+					{Key: "trial_credit", Label: "Trial credit granted", Status: ActivationStepCompleted},
+					{Key: "api_key", Label: "Create an API key", Status: ActivationStepCompleted},
+					{Key: "first_call", Label: "Make your first API call", Status: ActivationStepPending},
+				},
+			},
+		},
+	}
+	auth := &fakeAuthService{currentUser: CurrentUser{ID: "usr_1"}}
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, console, auth)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/console/overview", nil)
+	req.AddCookie(&http.Cookie{Name: security.SessionCookieName, Value: "tl_sess_test"})
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body ConsoleOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Workspace.ID != "wsp_1" || body.Workspace.Balance.AvailableCNY != "10.000000" {
+		t.Fatalf("workspace = %+v", body.Workspace)
+	}
+	if !body.Activation.TrialCreditGranted || body.Activation.TrialExpiresAt == nil || !body.Activation.TrialExpiresAt.Equal(trialExpiresAt) {
+		t.Fatalf("activation trial = %+v", body.Activation)
+	}
+	if !body.Activation.APIKeyCreated || body.Activation.FirstCallMade {
+		t.Fatalf("activation api/first call = %+v", body.Activation)
+	}
+	if len(body.Activation.Steps) != 3 || body.Activation.Steps[2].Key != "first_call" || body.Activation.Steps[2].Status != ActivationStepPending {
+		t.Fatalf("activation steps = %+v", body.Activation.Steps)
+	}
+	if console.overviewUser.ID != "usr_1" {
+		t.Fatalf("overview user id = %q, want %q", console.overviewUser.ID, "usr_1")
 	}
 }
 
@@ -273,6 +362,7 @@ func assertPanicMessage(t *testing.T, want string, fn func()) {
 type fakeConsoleService struct {
 	overviewResult         ConsoleOverviewResponse
 	overviewErr            error
+	overviewUser           CurrentUser
 	currentWorkspaceResult CurrentWorkspaceResponse
 	currentWorkspaceErr    error
 	listAPIKeysResult      ListAPIKeysResponse
@@ -287,7 +377,8 @@ type fakeConsoleService struct {
 	stateErr               error
 }
 
-func (f *fakeConsoleService) Overview(_ context.Context, _ CurrentUser) (ConsoleOverviewResponse, error) {
+func (f *fakeConsoleService) Overview(_ context.Context, user CurrentUser) (ConsoleOverviewResponse, error) {
+	f.overviewUser = user
 	return f.overviewResult, f.overviewErr
 }
 
