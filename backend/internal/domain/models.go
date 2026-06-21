@@ -80,6 +80,7 @@ type User struct {
 	DisplayName     string  `gorm:"size:120;not null;default:''"`
 	PrimaryEmail    *string `gorm:"size:320;uniqueIndex:uk_users_primary_email"`
 	EmailVerifiedAt *time.Time
+	TermsAcceptedAt *time.Time
 	AvatarURL       string         `gorm:"size:1024;not null;default:''"`
 	Status          UserStatus     `gorm:"size:32;not null;index"`
 	CreatedAt       time.Time      `gorm:"not null"`
@@ -88,14 +89,17 @@ type User struct {
 }
 
 type AccountIdentity struct {
-	ID              string    `gorm:"primaryKey;size:32"`
-	UserID          string    `gorm:"size:32;not null;index"`
-	Provider        string    `gorm:"size:32;not null;uniqueIndex:uk_account_identities_provider_subject,priority:1"`
-	ProviderSubject string    `gorm:"size:191;not null;uniqueIndex:uk_account_identities_provider_subject,priority:2"`
-	Email           string    `gorm:"size:320;not null;default:''"`
-	EmailVerified   bool      `gorm:"not null;default:false"`
-	CreatedAt       time.Time `gorm:"not null"`
-	UpdatedAt       time.Time `gorm:"not null"`
+	ID              string     `gorm:"primaryKey;size:32"`
+	UserID          string     `gorm:"size:32;not null;uniqueIndex:uk_account_identities_user_provider,priority:1"`
+	Provider        string     `gorm:"size:32;not null;uniqueIndex:uk_account_identities_provider_subject,priority:1;uniqueIndex:uk_account_identities_user_provider,priority:2"`
+	ProviderSubject string     `gorm:"size:191;not null;uniqueIndex:uk_account_identities_provider_subject,priority:2"`
+	Email           string     `gorm:"size:320;not null;default:''"`
+	EmailVerified   bool       `gorm:"not null;default:false"`
+	DisplayName     string     `gorm:"size:120;not null;default:''"`
+	AvatarURL       string     `gorm:"size:1024;not null;default:''"`
+	LinkedAt        *time.Time
+	CreatedAt       time.Time  `gorm:"not null"`
+	UpdatedAt       time.Time  `gorm:"not null"`
 }
 
 type Workspace struct {

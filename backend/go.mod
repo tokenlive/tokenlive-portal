@@ -1,15 +1,17 @@
 module github.com/tokenlive/tokenlive-portal/backend
 
-go 1.24
+go 1.25.0
 
 require (
+	github.com/go-sql-driver/mysql v1.7.0
+	golang.org/x/oauth2 v0.36.0
 	gorm.io/datatypes v1.2.0
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
 )
 
 require (
-	github.com/go-sql-driver/mysql v1.7.0 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	golang.org/x/text v0.14.0 // indirect

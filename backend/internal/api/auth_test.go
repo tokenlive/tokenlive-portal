@@ -270,6 +270,20 @@ func (f *fakeAuthService) Logout(_ context.Context, sessionToken string) error {
 	return f.logoutErr
 }
 
+func (f *fakeAuthService) GetGoogleAuthURL(string) string                          { return "" }
+func (f *fakeAuthService) HandleGoogleCallback(context.Context, string, string, string) (OAuthLoginResult, error) {
+	return OAuthLoginResult{}, nil
+}
+func (f *fakeAuthService) AcceptTerms(context.Context, string) (AcceptTermsResult, error) {
+	return AcceptTermsResult{}, nil
+}
+func (f *fakeAuthService) HandleGoogleBind(context.Context, string, string) (AccountIdentityDTO, error) {
+	return AccountIdentityDTO{}, nil
+}
+func (f *fakeAuthService) ListAccountIdentities(context.Context, string) ([]AccountIdentityDTO, error) {
+	return nil, nil
+}
+
 func TestRequireSessionUsesCurrentUser(t *testing.T) {
 	t.Parallel()
 

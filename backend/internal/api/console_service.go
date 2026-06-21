@@ -283,6 +283,9 @@ func (s *consoleService) resolveWorkspace(ctx context.Context, user CurrentUser)
 	if userID == "" {
 		return repository.CurrentWorkspaceResult{}, ErrAuthUnauthorized
 	}
+	if !user.TermsAccepted {
+		return repository.CurrentWorkspaceResult{}, ErrAuthTermsAlreadyAccepted
+	}
 	current, err := s.store.ResolveCurrentWorkspace(ctx, userID)
 	if err != nil {
 		return repository.CurrentWorkspaceResult{}, mapConsoleRepositoryError(err)
@@ -332,6 +335,8 @@ func mapConsoleError(err error) AppError {
 		return ErrAPIKeyInvalidExpiration
 	case errors.Is(err, ErrAuthUnauthorized):
 		return ErrUnauthorized
+	case errors.Is(err, ErrAuthTermsAlreadyAccepted):
+		return ErrTermsRequired
 	default:
 		return ErrInternalError
 	}

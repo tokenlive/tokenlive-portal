@@ -77,8 +77,12 @@ func grantTrialCreditInTx(tx *gorm.DB, workspaceID string, now time.Time, input 
 	}
 
 	expiresAt := now.AddDate(0, 0, input.TTLDays)
+	source := input.Source
+	if source == "" {
+		source = "email_registration"
+	}
 	metadata, err := json.Marshal(map[string]any{
-		"source":           "email_registration",
+		"source":           source,
 		"trial_expires_at": expiresAt.Format(time.RFC3339Nano),
 		"trial_ttl_days":   input.TTLDays,
 	})

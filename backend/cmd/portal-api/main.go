@@ -35,6 +35,7 @@ var (
 	newPortalConsoleService         = api.NewConsoleService
 	registerPortalPublicModelRoutes = api.RegisterPublicModelRoutes
 	registerPortalAuthRoutes        = api.RegisterAuthRoutes
+	registerPortalOAuthRoutes       = api.RegisterOAuthRoutes
 	registerPortalConsoleRoutes     = api.RegisterConsoleRoutes
 )
 
@@ -116,7 +117,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 
 	modelRepository := newPortalRepositories(db)
 
-	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit)
+	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("create auth service: %w", err)
@@ -130,6 +131,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 
 	registerPortalPublicModelRoutes(mux, modelRepository)
 	registerPortalAuthRoutes(mux, authService, cfg.Env)
+	registerPortalOAuthRoutes(mux, authService, cfg.Env)
 	registerPortalConsoleRoutes(mux, consoleService, authService)
 
 	return cleanup, nil

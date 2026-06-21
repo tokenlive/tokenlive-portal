@@ -38,6 +38,7 @@ type CreateSessionInput struct {
 type TrialCreditInput struct {
 	AmountMicroCNY int64
 	TTLDays        int
+	Source         string // 元数据来源标签，如 "email_registration" / "oauth_registration"
 }
 
 type CompleteEmailLoginInput struct {
@@ -387,10 +388,6 @@ func findOrCreateEmailUserForUpdate(tx *gorm.DB, input CompleteEmailLoginInput) 
 	if err != nil {
 		return emailUserWorkspaceResult{}, err
 	}
-	workspaceID, err := newID("wsp_")
-	if err != nil {
-		return emailUserWorkspaceResult{}, err
-	}
 
 	user = domain.User{
 		ID:           userID,
@@ -400,46 +397,16 @@ func findOrCreateEmailUserForUpdate(tx *gorm.DB, input CompleteEmailLoginInput) 
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+	// 邮箱登录的用户 terms 视为已接受（使用验证码本身即条款同意）
+	termsAccepted := now
+	user.TermsAcceptedAt = &termsAccepted
 	if err := tx.Create(&user).Error; err != nil {
 		return emailUserWorkspaceResult{}, fmt.Errorf("create user: %w", err)
 	}
 
-	workspace := domain.Workspace{
-		ID:              workspaceID,
-		Name:            input.WorkspaceName,
-		Slug:            input.WorkspaceSlug,
-		OwnerUserID:     userID,
-		Status:          domain.WorkspaceStatusActive,
-		CreatedByUserID: userID,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	if err := tx.Create(&workspace).Error; err != nil {
-		return emailUserWorkspaceResult{}, fmt.Errorf("create workspace: %w", err)
-	}
-
-	member := domain.WorkspaceMember{
-		WorkspaceID: workspaceID,
-		UserID:      userID,
-		Role:        domain.MemberRoleOwner,
-		Status:      domain.MemberStatusActive,
-		JoinedAt:    &now,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := tx.Create(&member).Error; err != nil {
-		return emailUserWorkspaceResult{}, fmt.Errorf("create owner membership: %w", err)
-	}
-
-	balance := domain.WorkspaceBalance{
-		WorkspaceID:       workspaceID,
-		AvailableMicroCNY: 0,
-		FrozenMicroCNY:    0,
-		Version:           1,
-		UpdatedAt:         now,
-	}
-	if err := tx.Create(&balance).Error; err != nil {
-		return emailUserWorkspaceResult{}, fmt.Errorf("create workspace balance: %w", err)
+	workspace, err := createDefaultWorkspaceInTx(tx, userID, input.WorkspaceName, input.WorkspaceSlug, now)
+	if err != nil {
+		return emailUserWorkspaceResult{}, err
 	}
 
 	return emailUserWorkspaceResult{

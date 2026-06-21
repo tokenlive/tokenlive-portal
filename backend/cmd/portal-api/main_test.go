@@ -161,6 +161,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	originalNewConsoleService := newPortalConsoleService
 	originalRegisterPublicModelRoutes := registerPortalPublicModelRoutes
 	originalRegisterAuthRoutes := registerPortalAuthRoutes
+	originalRegisterOAuthRoutes := registerPortalOAuthRoutes
 	originalRegisterConsoleRoutes := registerPortalConsoleRoutes
 
 	openPortalDatabase = func(_ string) (*gorm.DB, func() error, error) {
@@ -171,7 +172,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	}
 	capturedPortalAuthTrialCredit = config.TrialCreditConfig{}
 	capturedPortalConsoleTrialCredit = config.TrialCreditConfig{}
-	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig) (api.AuthService, error) {
+	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig, _ config.GoogleOAuthConfig) (api.AuthService, error) {
 		capturedPortalAuthTrialCredit = trialCredit
 		return fakePortalAuthService{}, nil
 	}
@@ -188,6 +189,8 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		mux.HandleFunc("POST /api/auth/email/start", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
+	}
+	registerPortalOAuthRoutes = func(_ *http.ServeMux, _ api.AuthService, _ string) {
 	}
 	registerPortalConsoleRoutes = func(mux *http.ServeMux, _ api.ConsoleService, _ api.AuthService) {
 		mux.HandleFunc("GET /api/console/overview", func(w http.ResponseWriter, _ *http.Request) {
@@ -208,6 +211,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		newPortalConsoleService = originalNewConsoleService
 		registerPortalPublicModelRoutes = originalRegisterPublicModelRoutes
 		registerPortalAuthRoutes = originalRegisterAuthRoutes
+		registerPortalOAuthRoutes = originalRegisterOAuthRoutes
 		registerPortalConsoleRoutes = originalRegisterConsoleRoutes
 	}
 }
@@ -231,6 +235,20 @@ func (fakePortalAuthService) CurrentUser(context.Context, string) (api.CurrentUs
 
 func (fakePortalAuthService) Logout(context.Context, string) error {
 	return nil
+}
+
+func (fakePortalAuthService) GetGoogleAuthURL(string) string                       { return "" }
+func (fakePortalAuthService) HandleGoogleCallback(context.Context, string, string, string) (api.OAuthLoginResult, error) {
+	return api.OAuthLoginResult{}, nil
+}
+func (fakePortalAuthService) AcceptTerms(context.Context, string) (api.AcceptTermsResult, error) {
+	return api.AcceptTermsResult{}, nil
+}
+func (fakePortalAuthService) HandleGoogleBind(context.Context, string, string) (api.AccountIdentityDTO, error) {
+	return api.AccountIdentityDTO{}, nil
+}
+func (fakePortalAuthService) ListAccountIdentities(context.Context, string) ([]api.AccountIdentityDTO, error) {
+	return nil, nil
 }
 
 type fakePortalConsoleService struct{}

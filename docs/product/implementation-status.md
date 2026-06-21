@@ -1,6 +1,6 @@
 # TokenLive Portal Implementation Status
 
-Date: 2026-06-20
+Date: 2026-06-21
 
 This document summarizes what has been implemented in `tokenlive-portal` and what is still pending for the first user-facing Portal release.
 
@@ -61,15 +61,23 @@ Implemented:
 - Current-user API.
 - Logout.
 - Development/test code return behavior.
+- Google OAuth login (`GET /api/auth/google/login` → 302 redirect, `GET /api/auth/google/callback` → create user + session).
+- Cookie-based CSRF state parameter for OAuth.
+- Google account binding for existing users (`GET /api/auth/google/bind`, `GET /api/auth/google/bind/callback`).
+- List bound OAuth accounts (`GET /api/auth/oauth/accounts`).
+- Terms acceptance checkpoint (`POST /api/auth/accept-terms`); creates default Workspace + grants trial credit.
+- `terms_accepted_at` field on users table; existing users backfilled on migration.
+- Console routes reject requests with `auth.terms_required` when terms not accepted.
+- Email-collision rejection: Google OAuth returns `auth.email_taken` if email already registered via email-code login.
+- Reuse extracted `createDefaultWorkspaceInTx` for both email-login and OAuth onboarding flows.
+- Configurable `GoogleOAuthConfig` via `PORTAL_GOOGLE_CLIENT_ID`, `PORTAL_GOOGLE_CLIENT_SECRET`, `PORTAL_GOOGLE_REDIRECT_URL` environment variables.
+- `AccountIdentity` table extended with `display_name`, `avatar_url`, `linked_at`, and `(user_id, provider)` unique index.
 
 Still pending:
 
 - Real email delivery integration.
-- Google OAuth login.
 - GitHub OAuth login.
-- Account linking.
-- Terms acceptance checkpoint.
-- CSRF protection and rate limiting.
+- CSRF protection for non-OAuth endpoints and rate limiting.
 
 ### Workspace API Key Console
 
@@ -159,11 +167,9 @@ Billing and usage:
 
 Authentication:
 
-- Google OAuth.
 - GitHub OAuth.
-- Explicit account linking.
 - Email delivery provider.
-- Terms acceptance after OAuth callback.
+- CSRF protection for non-OAuth endpoints and rate limiting.
 
 Runtime integration:
 

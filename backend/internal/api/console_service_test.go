@@ -179,7 +179,7 @@ func TestConsoleServiceCurrentWorkspaceMapsBalance(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	got, err := service.CurrentWorkspace(context.Background(), CurrentUser{ID: "usr_1"})
+	got, err := service.CurrentWorkspace(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
 	if err != nil {
 		t.Fatalf("current workspace: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestConsoleServiceBillingCannotListAPIKeys(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	_, err = service.ListAPIKeys(context.Background(), CurrentUser{ID: "usr_1"})
+	_, err = service.ListAPIKeys(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
 	if !errors.Is(err, ErrConsolePermissionDenied) {
 		t.Fatalf("err = %v, want ErrConsolePermissionDenied", err)
 	}
@@ -264,7 +264,7 @@ func TestConsoleServiceCreateAPIKeyReturnsSecretOnce(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	got, err := service.CreateAPIKey(context.Background(), CurrentUser{ID: "usr_1"}, CreateAPIKeyRequest{
+	got, err := service.CreateAPIKey(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateAPIKeyRequest{
 		Name:                 " local dev ",
 		DailyLimitMicroCNY:   &dailyLimit,
 		MonthlyLimitMicroCNY: &monthlyLimit,
@@ -335,7 +335,7 @@ func TestConsoleServiceListAPIKeysDoesNotExposeSecret(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	got, err := service.ListAPIKeys(context.Background(), CurrentUser{ID: "usr_1"})
+	got, err := service.ListAPIKeys(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
 	if err != nil {
 		t.Fatalf("list api keys: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestConsoleServiceStateUpdatesUseCurrentWorkspaceAndTargetStatus(t *testing
 				t.Fatalf("new console service: %v", err)
 			}
 
-			got, err := tt.call(service, context.Background(), CurrentUser{ID: "usr_1"}, " ak_1 ")
+			got, err := tt.call(service, context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, " ak_1 ")
 			if err != nil {
 				t.Fatalf("%s api key: %v", tt.name, err)
 			}
@@ -455,7 +455,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	got, err := service.Overview(context.Background(), CurrentUser{ID: "usr_1"})
+	got, err := service.Overview(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
 	if err != nil {
 		t.Fatalf("overview: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestConsoleServiceOverviewMapsWorkspaceNotFound(t *testing.T) {
 		t.Fatalf("new console service: %v", err)
 	}
 
-	_, err = service.Overview(context.Background(), CurrentUser{ID: "usr_1"})
+	_, err = service.Overview(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
 	if !errors.Is(err, ErrConsoleWorkspaceNotFound) {
 		t.Fatalf("err = %v, want ErrConsoleWorkspaceNotFound", err)
 	}

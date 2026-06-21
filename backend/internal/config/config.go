@@ -18,6 +18,17 @@ type Config struct {
 	DatabaseDSN string
 	AuthPepper  string
 	TrialCredit TrialCreditConfig
+	GoogleOAuth GoogleOAuthConfig
+}
+
+type GoogleOAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+func (c GoogleOAuthConfig) Enabled() bool {
+	return c.ClientID != "" && c.ClientSecret != "" && c.RedirectURL != ""
 }
 
 type TrialCreditConfig struct {
@@ -43,7 +54,16 @@ func Load() (Config, error) {
 		DatabaseDSN: os.Getenv("PORTAL_DATABASE_DSN"),
 		AuthPepper:  authPepper,
 		TrialCredit: trialCredit,
+		GoogleOAuth: loadGoogleOAuthConfig(),
 	}, nil
+}
+
+func loadGoogleOAuthConfig() GoogleOAuthConfig {
+	return GoogleOAuthConfig{
+		ClientID:     strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_CLIENT_ID")),
+		ClientSecret: strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_CLIENT_SECRET")),
+		RedirectURL:  strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_REDIRECT_URL")),
+	}
 }
 
 func loadTrialCreditConfig() (TrialCreditConfig, error) {

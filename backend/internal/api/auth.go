@@ -13,11 +13,16 @@ import (
 const sessionCookieTTL = 30 * 24 * time.Hour
 
 var (
-	ErrAuthInvalidEmail    = errors.New("auth invalid email")
-	ErrAuthInvalidCode     = errors.New("auth invalid code")
-	ErrAuthUnauthorized    = errors.New("auth unauthorized")
-	ErrAuthSessionRequired = errors.New("auth session required")
-	ErrAuthSessionExpired  = errors.New("auth session expired")
+	ErrAuthInvalidEmail        = errors.New("auth invalid email")
+	ErrAuthInvalidCode         = errors.New("auth invalid code")
+	ErrAuthUnauthorized        = errors.New("auth unauthorized")
+	ErrAuthSessionRequired     = errors.New("auth session required")
+	ErrAuthSessionExpired      = errors.New("auth session expired")
+	ErrAuthInvalidRequest      = errors.New("auth invalid request")
+	ErrAuthOAuthEmailConflict  = errors.New("auth oauth email conflict")
+	ErrAuthOAuthIdentityBound  = errors.New("auth oauth identity already bound")
+	ErrAuthTermsAlreadyAccepted = errors.New("auth terms already accepted")
+	ErrAuthOAuthNotConfigured  = errors.New("auth oauth not configured")
 )
 
 type authContextKey string
@@ -29,6 +34,19 @@ type AuthService interface {
 	VerifyEmailLogin(ctx context.Context, input VerifyEmailLoginInput) (VerifyEmailLoginResult, error)
 	CurrentUser(ctx context.Context, sessionToken string) (CurrentUser, error)
 	Logout(ctx context.Context, sessionToken string) error
+
+	// Google OAuth
+	GetGoogleAuthURL(state string) string
+	HandleGoogleCallback(ctx context.Context, code, ip, userAgent string) (OAuthLoginResult, error)
+	AcceptTerms(ctx context.Context, sessionToken string) (AcceptTermsResult, error)
+	HandleGoogleBind(ctx context.Context, sessionToken, code string) (AccountIdentityDTO, error)
+	ListAccountIdentities(ctx context.Context, sessionToken string) ([]AccountIdentityDTO, error)
+}
+
+type OAuthLoginResult struct {
+	SessionToken string
+	User         CurrentUser
+	TermsPending bool // 如果为 true，表示需要先接受条款
 }
 
 type StartEmailLoginResult struct {
@@ -51,6 +69,26 @@ type CurrentUser struct {
 	DisplayName   string `json:"display_name"`
 	PrimaryEmail  string `json:"primary_email"`
 	EmailVerified bool   `json:"email_verified"`
+	TermsAccepted bool   `json:"terms_accepted"`
+	AvatarURL     string `json:"avatar_url"`
+}
+
+type AcceptTermsResult struct {
+	User      CurrentUser `json:"user"`
+	Workspace WorkspaceDTO `json:"workspace"`
+}
+
+type WorkspaceDTO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type AccountIdentityDTO struct {
+	Provider    string `json:"provider"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	LinkedAt    string `json:"linked_at,omitempty"`
 }
 
 type AuthHandler struct {
@@ -238,6 +276,16 @@ func mapAuthError(err error) AppError {
 		return ErrSessionRequired
 	case errors.Is(err, ErrAuthSessionExpired):
 		return ErrSessionExpired
+	case errors.Is(err, ErrAuthInvalidRequest):
+		return ErrInvalidRequest
+	case errors.Is(err, ErrAuthOAuthEmailConflict):
+		return ErrOAuthEmailTaken
+	case errors.Is(err, ErrAuthOAuthIdentityBound):
+		return ErrOAuthIdentityBound
+	case errors.Is(err, ErrAuthTermsAlreadyAccepted):
+		return ErrTermsRequired
+	case errors.Is(err, ErrAuthOAuthNotConfigured):
+		return ErrInternalError
 	default:
 		return ErrInternalError
 	}

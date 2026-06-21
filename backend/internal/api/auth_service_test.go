@@ -16,7 +16,7 @@ import (
 func TestNewAuthServiceRejectsEmptyPepper(t *testing.T) {
 	t.Parallel()
 
-	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "", validTrialCreditConfig())
+	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -31,7 +31,7 @@ func TestNewAuthServiceRejectsNegativeTrialAmount(t *testing.T) {
 	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: -1,
 		TTLDays:        7,
-	})
+	}, config.GoogleOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -46,7 +46,7 @@ func TestNewAuthServiceRejectsInvalidTrialTTL(t *testing.T) {
 	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: 10_000_000,
 		TTLDays:        0,
-	})
+	}, config.GoogleOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -59,7 +59,7 @@ func TestStartEmailLoginNormalizesEmailAndReturnsDevCode(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeAuthServiceStore{}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestStartEmailLoginOmitsDevCodeOutsideDevelopmentAndTest(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeAuthServiceStore{}
-	service, err := newAuthService(store, "production", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "production", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestVerifyEmailLoginCreatesUserMarksVerifiedAndCreatesSession(t *testing.T)
 	service, err := newAuthService(store, "test", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: 10_000_000,
 		TTLDays:        7,
-	})
+	}, config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestVerifyEmailLoginUsesExistingUser(t *testing.T) {
 			},
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestCurrentUserMapsMissingSessionToExpired(t *testing.T) {
 	store := &fakeAuthServiceStore{
 		findActiveSessionErr: repository.ErrSessionNotFound,
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestCurrentUserLoadsUserFromSession(t *testing.T) {
 			EmailVerifiedAt: &verifiedAt,
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestLogoutRevokesResolvedSession(t *testing.T) {
 			UserID: "usr_123",
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig())
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -373,6 +373,46 @@ func (f *fakeAuthServiceStore) FindUserByID(_ context.Context, userID string) (d
 func (f *fakeAuthServiceStore) RevokeSession(_ context.Context, sessionID string) error {
 	f.revokedSessionID = sessionID
 	return f.revokeSessionErr
+}
+
+func (f *fakeAuthServiceStore) FindAccountIdentityByProviderSubject(_ context.Context, _, _ string) (domain.AccountIdentity, error) {
+	return domain.AccountIdentity{}, repository.ErrAccountIdentityNotFound
+}
+
+func (f *fakeAuthServiceStore) FindAccountIdentityByUserProvider(_ context.Context, _, _ string) (domain.AccountIdentity, error) {
+	return domain.AccountIdentity{}, repository.ErrAccountIdentityNotFound
+}
+
+func (f *fakeAuthServiceStore) ListAccountIdentitiesByUserID(_ context.Context, _ string) ([]domain.AccountIdentity, error) {
+	return nil, nil
+}
+
+func (f *fakeAuthServiceStore) CreateOAuthUser(_ context.Context, input repository.CreateOAuthUserInput) (repository.CreateOAuthUserResult, error) {
+	return repository.CreateOAuthUserResult{
+		User: domain.User{ID: "test-user", DisplayName: input.DisplayName, TermsAcceptedAt: nil},
+	}, nil
+}
+
+func (f *fakeAuthServiceStore) LinkOAuthIdentity(_ context.Context, input repository.LinkOAuthIdentityInput) (domain.AccountIdentity, error) {
+	return domain.AccountIdentity{
+		Provider: input.Provider,
+		Email:    input.Email,
+	}, nil
+}
+
+func (f *fakeAuthServiceStore) CreateSession(_ context.Context, _ repository.CreateSessionInput) (domain.UserSession, error) {
+	return domain.UserSession{}, nil
+}
+
+func (f *fakeAuthServiceStore) CompleteUserOnboarding(_ context.Context, input repository.CompleteUserOnboardingInput) (repository.CompleteUserOnboardingResult, error) {
+	return repository.CompleteUserOnboardingResult{
+		User:      domain.User{ID: input.UserID},
+		Workspace: domain.Workspace{Name: input.WorkspaceName, Slug: input.WorkspaceSlug},
+	}, nil
+}
+
+func (f *fakeAuthServiceStore) FindUserByPrimaryEmail(_ context.Context, _ string) (domain.User, error) {
+	return domain.User{}, repository.ErrUserNotFound
 }
 
 func stringPtr(value string) *string {

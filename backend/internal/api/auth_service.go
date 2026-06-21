@@ -25,6 +25,14 @@ type authServiceStore interface {
 	FindActiveSessionByTokenHash(ctx context.Context, tokenHash string) (domain.UserSession, error)
 	FindUserByID(ctx context.Context, userID string) (domain.User, error)
 	RevokeSession(ctx context.Context, sessionID string) error
+	FindAccountIdentityByProviderSubject(ctx context.Context, provider, subject string) (domain.AccountIdentity, error)
+	FindAccountIdentityByUserProvider(ctx context.Context, userID, provider string) (domain.AccountIdentity, error)
+	ListAccountIdentitiesByUserID(ctx context.Context, userID string) ([]domain.AccountIdentity, error)
+	CreateOAuthUser(ctx context.Context, input repository.CreateOAuthUserInput) (repository.CreateOAuthUserResult, error)
+	LinkOAuthIdentity(ctx context.Context, input repository.LinkOAuthIdentityInput) (domain.AccountIdentity, error)
+	CreateSession(ctx context.Context, input repository.CreateSessionInput) (domain.UserSession, error)
+	CompleteUserOnboarding(ctx context.Context, input repository.CompleteUserOnboardingInput) (repository.CompleteUserOnboardingResult, error)
+	FindUserByPrimaryEmail(ctx context.Context, email string) (domain.User, error)
 }
 
 type authServiceRepositoryStore struct {
@@ -55,25 +63,58 @@ func (s authServiceRepositoryStore) RevokeSession(ctx context.Context, sessionID
 	return s.repos.RevokeSession(ctx, sessionID)
 }
 
+func (s authServiceRepositoryStore) FindAccountIdentityByProviderSubject(ctx context.Context, provider, subject string) (domain.AccountIdentity, error) {
+	return s.repos.FindAccountIdentityByProviderSubject(ctx, provider, subject)
+}
+
+func (s authServiceRepositoryStore) FindAccountIdentityByUserProvider(ctx context.Context, userID, provider string) (domain.AccountIdentity, error) {
+	return s.repos.FindAccountIdentityByUserProvider(ctx, userID, provider)
+}
+
+func (s authServiceRepositoryStore) ListAccountIdentitiesByUserID(ctx context.Context, userID string) ([]domain.AccountIdentity, error) {
+	return s.repos.ListAccountIdentitiesByUserID(ctx, userID)
+}
+
+func (s authServiceRepositoryStore) CreateOAuthUser(ctx context.Context, input repository.CreateOAuthUserInput) (repository.CreateOAuthUserResult, error) {
+	return s.repos.CreateOAuthUser(ctx, input)
+}
+
+func (s authServiceRepositoryStore) LinkOAuthIdentity(ctx context.Context, input repository.LinkOAuthIdentityInput) (domain.AccountIdentity, error) {
+	return s.repos.LinkOAuthIdentity(ctx, input)
+}
+
+func (s authServiceRepositoryStore) CreateSession(ctx context.Context, input repository.CreateSessionInput) (domain.UserSession, error) {
+	return s.repos.CreateSession(ctx, input)
+}
+
+func (s authServiceRepositoryStore) CompleteUserOnboarding(ctx context.Context, input repository.CompleteUserOnboardingInput) (repository.CompleteUserOnboardingResult, error) {
+	return s.repos.CompleteUserOnboarding(ctx, input)
+}
+
+func (s authServiceRepositoryStore) FindUserByPrimaryEmail(ctx context.Context, email string) (domain.User, error) {
+	return s.repos.FindUserByPrimaryEmail(ctx, email)
+}
+
 type authService struct {
 	store                authServiceStore
 	env                  string
 	authPepper           string
 	trialCredit          config.TrialCreditConfig
+	googleOAuth          config.GoogleOAuthConfig
 	nowFunc              func() time.Time
 	generateEmailCode    func() (string, error)
 	generateSessionToken func() (string, error)
 	generateSlugSuffix   func() (string, error)
 }
 
-func NewAuthService(repos *repository.Repositories, env string, authPepper string, trialCredit config.TrialCreditConfig) (AuthService, error) {
+func NewAuthService(repos *repository.Repositories, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig) (AuthService, error) {
 	if repos == nil {
 		return nil, errors.New("auth repositories are required")
 	}
-	return newAuthService(authServiceRepositoryStore{repos: repos}, env, authPepper, trialCredit)
+	return newAuthService(authServiceRepositoryStore{repos: repos}, env, authPepper, trialCredit, googleOAuth)
 }
 
-func newAuthService(store authServiceStore, env string, authPepper string, trialCredit config.TrialCreditConfig) (*authService, error) {
+func newAuthService(store authServiceStore, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig) (*authService, error) {
 	if store == nil {
 		return nil, errors.New("auth store is required")
 	}
@@ -92,6 +133,7 @@ func newAuthService(store authServiceStore, env string, authPepper string, trial
 		env:                  normalizeEnv(env),
 		authPepper:           authPepper,
 		trialCredit:          trialCredit,
+		googleOAuth:          googleOAuth,
 		nowFunc:              func() time.Time { return time.Now().UTC() },
 		generateEmailCode:    security.GenerateEmailCode,
 		generateSessionToken: security.GenerateSessionToken,
@@ -277,6 +319,8 @@ func currentUserFromDomain(user domain.User) CurrentUser {
 		DisplayName:   user.DisplayName,
 		PrimaryEmail:  derefString(user.PrimaryEmail),
 		EmailVerified: user.EmailVerifiedAt != nil,
+		TermsAccepted: user.TermsAcceptedAt != nil,
+		AvatarURL:     user.AvatarURL,
 	}
 }
 
