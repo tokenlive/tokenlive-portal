@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { fetchModelDetail } from "@/lib/api";
 import { Header } from "@/components/layout/header";
 import type { Metadata } from "next";
@@ -44,9 +45,9 @@ export default async function ModelDetailPage({ params }: Props) {
         <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
           {/* Breadcrumb */}
           <nav className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
-            <a href="/" className="hover:text-foreground transition-colors">
+            <Link href="/" className="hover:text-foreground transition-colors">
               Models
-            </a>
+            </Link>
             <span>/</span>
             <span className="text-foreground">{model.display_name}</span>
           </nav>

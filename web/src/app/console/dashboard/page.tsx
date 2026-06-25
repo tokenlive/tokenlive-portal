@@ -1,28 +1,57 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { fetchOverview } from "@/lib/api";
-import type { Metadata } from "next";
+import { getConsoleAuthRedirect } from "@/lib/auth-flow";
+import type { ConsoleOverviewResponse } from "@/types/api";
 
-export const metadata: Metadata = {
-  title: "Dashboard",
-};
+export default function DashboardPage() {
+  const router = useRouter();
+  const [overview, setOverview] = useState<ConsoleOverviewResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export const dynamic = "force-dynamic";
+  useEffect(() => {
+    let cancelled = false;
 
-export default async function DashboardPage() {
-  let overview = null;
-  try {
-    overview = await fetchOverview();
-  } catch {
-    // API unreachable
-  }
+    async function loadOverview() {
+      try {
+        const data = await fetchOverview();
+        if (!cancelled) {
+          setOverview(data);
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const redirectTo = getConsoleAuthRedirect(err);
+        if (redirectTo) {
+          router.replace(redirectTo);
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load overview");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadOverview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const ws = overview?.workspace;
   const activation = overview?.activation;
 
   return (
     <div className="p-6 lg:p-8">
-      {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="mb-1 flex items-center gap-2">
           <span className="tl-node tl-node--active" />
           <h1 className="font-heading text-xl font-semibold text-foreground">
             Console
@@ -33,10 +62,21 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* Activation steps */}
+      {loading && (
+        <div className="mb-8 rounded-lg border border-border bg-card p-5 text-sm text-muted-foreground">
+          Loading workspace overview...
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-8 rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       {activation && (
         <section className="mb-8">
-          <h2 className="font-heading text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">
+          <h2 className="mb-4 font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Getting Started
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -47,31 +87,26 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {/* Stats */}
       <section className="mb-8">
-        <h2 className="font-heading text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">
+        <h2 className="mb-4 font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
           Workspace
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <StatCard
             label="Available Balance"
-            value={ws?.balance.available_cny || "—"}
+            value={ws?.balance.available_cny || "-"}
           />
-          <StatCard
-            label="Frozen Balance"
-            value={ws?.balance.frozen_cny || "—"}
-          />
+          <StatCard label="Frozen Balance" value={ws?.balance.frozen_cny || "-"} />
           <StatCard
             label="Workspace"
-            value={ws?.name || "—"}
+            value={ws?.name || "-"}
             suffix={ws?.role ? `(${ws.role})` : undefined}
           />
         </div>
       </section>
 
-      {/* Quick API snippet */}
       <section>
-        <h2 className="font-heading text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">
+        <h2 className="mb-4 font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
           Quick Start
         </h2>
         <div className="rounded-lg border border-border bg-card p-5">
@@ -102,17 +137,11 @@ function ActivationStepCard({
   return (
     <div
       className={`rounded-lg border p-4 transition-colors ${
-        completed
-          ? "border-primary/20 bg-primary/5"
-          : "border-border bg-card"
+        completed ? "border-primary/20 bg-primary/5" : "border-border bg-card"
       }`}
     >
-      <div className="flex items-center gap-2 mb-1.5">
-        <span
-          className={`tl-node tl-node--sm ${
-            completed ? "tl-node--active" : ""
-          }`}
-        />
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className={`tl-node tl-node--sm ${completed ? "tl-node--active" : ""}`} />
         <h3 className="font-heading text-sm font-medium text-foreground">
           {step.label}
         </h3>
@@ -132,7 +161,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
       <p className="mt-2 font-heading text-2xl font-bold text-foreground">

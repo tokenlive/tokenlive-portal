@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { listAPIKeys, createAPIKey, updateAPIKeyStatus } from "@/lib/api";
+import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 import type { APIKeyResponse } from "@/types/api";
 
 export default function APIKeysPage() {
+  const router = useRouter();
   const [keys, setKeys] = useState<APIKeyResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyKeyID, setBusyKeyID] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
@@ -16,27 +20,37 @@ export default function APIKeysPage() {
     try {
       const res = await listAPIKeys();
       setKeys(res.data);
-    } catch {
-      // API unreachable
+    } catch (err) {
+      const redirectTo = getConsoleAuthRedirect(err);
+      if (redirectTo) {
+        router.replace(redirectTo);
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Failed to load API keys");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
-    loadKeys();
+    void Promise.resolve().then(loadKeys);
   }, [loadKeys]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
-      const res = await createAPIKey({ name: newKeyName });
+      const res = await createAPIKey({ name: newKeyName.trim() });
       setCreatedSecret(res.secret);
       setNewKeyName("");
       setShowCreate(false);
       loadKeys();
     } catch (err) {
+      const redirectTo = getConsoleAuthRedirect(err);
+      if (redirectTo) {
+        router.replace(redirectTo);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to create key");
     }
   };
@@ -45,11 +59,24 @@ export default function APIKeysPage() {
     id: string,
     action: "enable" | "disable" | "revoke"
   ) => {
+    if (action === "revoke" && !window.confirm("Revoke this API key? This cannot be undone.")) {
+      return;
+    }
+
+    setBusyKeyID(id);
+    setError(null);
     try {
       await updateAPIKeyStatus(id, action);
       loadKeys();
-    } catch {
-      // noop
+    } catch (err) {
+      const redirectTo = getConsoleAuthRedirect(err);
+      if (redirectTo) {
+        router.replace(redirectTo);
+        return;
+      }
+      setError(err instanceof Error ? err.message : `Failed to ${action} key`);
+    } finally {
+      setBusyKeyID(null);
     }
   };
 
@@ -151,6 +178,12 @@ export default function APIKeysPage() {
         </form>
       )}
 
+      {error && !showCreate && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       {/* Keys table */}
       {loading ? (
         <div className="py-12 text-center text-sm text-muted-foreground">
@@ -217,6 +250,7 @@ export default function APIKeysPage() {
                             onClick={() =>
                               handleStatusChange(key.id, "disable")
                             }
+                            disabled={busyKeyID === key.id}
                             className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                           >
                             Disable
@@ -227,6 +261,7 @@ export default function APIKeysPage() {
                             onClick={() =>
                               handleStatusChange(key.id, "enable")
                             }
+                            disabled={busyKeyID === key.id}
                             className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                           >
                             Enable
@@ -237,6 +272,7 @@ export default function APIKeysPage() {
                             onClick={() =>
                               handleStatusChange(key.id, "revoke")
                             }
+                            disabled={busyKeyID === key.id}
                             className="rounded px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10"
                           >
                             Revoke

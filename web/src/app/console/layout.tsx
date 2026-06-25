@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { logout } from "@/lib/api";
+import { getMe, logout } from "@/lib/api";
+import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 
 const NAV_ITEMS = [
   { href: "/console/dashboard", label: "Overview", icon: "◉" },
@@ -17,6 +19,41 @@ export default function ConsoleLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkSession() {
+      try {
+        const user = await getMe();
+        if (cancelled) {
+          return;
+        }
+        if (!user.terms_accepted) {
+          router.replace("/accept-terms");
+          return;
+        }
+        setReady(true);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const redirectTo = getConsoleAuthRedirect(err);
+        if (redirectTo) {
+          router.replace(redirectTo);
+          return;
+        }
+        setReady(true);
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const handleSignOut = async () => {
     try {
@@ -78,7 +115,15 @@ export default function ConsoleLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1">{children}</main>
+      <main className="flex-1">
+        {ready ? (
+          children
+        ) : (
+          <div className="p-6 lg:p-8">
+            <p className="text-sm text-muted-foreground">Checking session...</p>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

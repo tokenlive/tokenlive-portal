@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { acceptTerms } from "@/lib/api";
+import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 
 export default function AcceptTermsPage() {
   const router = useRouter();
@@ -17,6 +18,11 @@ export default function AcceptTermsPage() {
       await acceptTerms();
       router.push("/console/dashboard");
     } catch (err) {
+      const redirectTo = getConsoleAuthRedirect(err);
+      if (redirectTo && redirectTo !== "/accept-terms") {
+        router.replace(redirectTo);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to accept terms");
     } finally {
       setLoading(false);
@@ -63,7 +69,7 @@ export default function AcceptTermsPage() {
                 <strong>Acceptable Use</strong>: You agree to use the service in compliance with all applicable laws and regulations.
               </p>
               <p>
-                <strong>Liability</strong>: We provide the service "as is" without any warranties.
+                <strong>Liability</strong>: We provide the service &quot;as is&quot; without any warranties.
               </p>
             </div>
 

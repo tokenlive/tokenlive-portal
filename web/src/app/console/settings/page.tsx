@@ -24,7 +24,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void Promise.resolve().then(load);
   }, [load]);
 
   const handleSignOut = async () => {

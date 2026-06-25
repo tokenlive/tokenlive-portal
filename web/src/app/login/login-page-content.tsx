@@ -1,35 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { startEmailLogin, verifyEmailLogin, GOOGLE_LOGIN_URL } from "@/lib/api";
+import { getPostLoginPath } from "@/lib/auth-flow";
 
 type Step = "email" | "code";
 
 export default function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  const initialEmail = searchParams.get("email") ?? "";
+  const [step, setStep] = useState<Step>(
+    initialEmail && searchParams.get("start") === "true" ? "code" : "email"
+  );
+  const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
-
-  // Check for email param from register page
-  useEffect(() => {
-    const emailParam = searchParams.get("email");
-    const startParam = searchParams.get("start");
-    if (emailParam) {
-      setEmail(emailParam);
-      if (startParam === "true") {
-        // Auto-start login if coming from register
-        startLogin(emailParam);
-      }
-    }
-  }, [searchParams]);
 
   const startLogin = async (emailToUse: string) => {
     setError(null);
@@ -58,11 +49,7 @@ export default function LoginPageContent() {
     setLoading(true);
     try {
       const res = await verifyEmailLogin(email, code);
-      if (res.user.terms_accepted) {
-        router.push("/console/dashboard");
-      } else {
-        router.push("/accept-terms");
-      }
+      router.push(getPostLoginPath(res.user));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
     } finally {
