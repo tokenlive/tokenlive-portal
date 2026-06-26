@@ -53,90 +53,90 @@
 }
 
 /* ─── TokenLive Design System ───
-   Accent:  #F5A623  (warm amber — "data light")
+   Accent:  #2563EB  (royal blue — inspired by login page)
    Dark default, light available
    Typography: Space Grotesk (heading), Inter (body), JetBrains Mono (mono)
    ─────────────────────────────────── */
 
 /* Light theme (explicit .light class or no .dark class) */
 :root {
-  --background: #F7F8FA;
-  --foreground: #1B1F23;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
   --card: #FFFFFF;
-  --card-foreground: #1B1F23;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #1B1F23;
-  --primary: #D4891A;
+  --popover-foreground: #0F172A;
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
-  --secondary: #F0F1F3;
-  --secondary-foreground: #1B1F23;
-  --muted: #F0F1F3;
-  --muted-foreground: #6B7280;
-  --accent: #D4891A;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #0F172A;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --accent: #3B82F6;
   --accent-foreground: #FFFFFF;
-  --destructive: #DC2626;
-  --border: #E2E5EA;
-  --input: #E2E5EA;
-  --ring: #D4891A;
-  --chart-1: #D4891A;
-  --chart-2: #2563EB;
-  --chart-3: #16A34A;
-  --chart-4: #9333EA;
-  --chart-5: #DC2626;
+  --destructive: #EF4444;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #3B82F6;
+  --chart-1: #2563EB;
+  --chart-2: #7C3AED;
+  --chart-3: #06B6D4;
+  --chart-4: #10B981;
+  --chart-5: #F59E0B;
   --radius: 0.625rem;
 
   --sidebar: #FFFFFF;
-  --sidebar-foreground: #1B1F23;
-  --sidebar-primary: #D4891A;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #2563EB;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0F1F3;
-  --sidebar-accent-foreground: #1B1F23;
-  --sidebar-border: #E2E5EA;
-  --sidebar-ring: #D4891A;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #3B82F6;
 
   /* TokenLive custom tokens */
-  --tl-glow: 0 0 8px rgba(212, 137, 26, 0.3);
-  --tl-glow-strong: 0 0 16px rgba(212, 137, 26, 0.5);
+  --tl-glow: 0 0 8px rgba(37, 99, 235, 0.3);
+  --tl-glow-strong: 0 0 16px rgba(37, 99, 235, 0.5);
 }
 
 /* Dark theme (default for TokenLive) */
 .dark {
-  --background: #0C0F14;
-  --foreground: #E6EDF3;
-  --card: #161B22;
-  --card-foreground: #E6EDF3;
-  --popover: #161B22;
-  --popover-foreground: #E6EDF3;
-  --primary: #F5A623;
-  --primary-foreground: #0C0F14;
-  --secondary: #1C2028;
-  --secondary-foreground: #E6EDF3;
-  --muted: #1C2028;
-  --muted-foreground: #7D8590;
-  --accent: #F5A623;
-  --accent-foreground: #0C0F14;
+  --background: #0B1121;
+  --foreground: #E2E8F0;
+  --card: #111827;
+  --card-foreground: #E2E8F0;
+  --popover: #111827;
+  --popover-foreground: #E2E8F0;
+  --primary: #3B82F6;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1E293B;
+  --secondary-foreground: #E2E8F0;
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  --accent: #60A5FA;
+  --accent-foreground: #0B1121;
   --destructive: #F87171;
-  --border: #21262D;
-  --input: #21262D;
-  --ring: #F5A623;
-  --chart-1: #F5A623;
-  --chart-2: #60A5FA;
-  --chart-3: #4ADE80;
-  --chart-4: #C084FC;
-  --chart-5: #F87171;
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #3B82F6;
+  --chart-1: #3B82F6;
+  --chart-2: #8B5CF6;
+  --chart-3: #22D3EE;
+  --chart-4: #34D399;
+  --chart-5: #FBBF24;
   --radius: 0.625rem;
 
-  --sidebar: #161B22;
-  --sidebar-foreground: #E6EDF3;
-  --sidebar-primary: #F5A623;
-  --sidebar-primary-foreground: #0C0F14;
-  --sidebar-accent: #1C2028;
-  --sidebar-accent-foreground: #E6EDF3;
-  --sidebar-border: #21262D;
-  --sidebar-ring: #F5A623;
+  --sidebar: #111827;
+  --sidebar-foreground: #E2E8F0;
+  --sidebar-primary: #3B82F6;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E293B;
+  --sidebar-accent-foreground: #E2E8F0;
+  --sidebar-border: #1E293B;
+  --sidebar-ring: #3B82F6;
 
-  --tl-glow: 0 0 8px rgba(245, 166, 35, 0.25);
-  --tl-glow-strong: 0 0 20px rgba(245, 166, 35, 0.45);
+  --tl-glow: 0 0 8px rgba(59, 130, 246, 0.25);
+  --tl-glow-strong: 0 0 20px rgba(59, 130, 246, 0.45);
 }
 
 @layer base {
@@ -152,7 +152,7 @@
 }
 
 /* ─── Flow Node (signature element) ───
-   A small glowing amber dot used as a status/route indicator.
+   A small glowing blue dot used as a status/route indicator.
    Usage: <span class="tl-node" /> or <span class="tl-node tl-node--active" />
    ─────────────────────────────────── */
 @layer components {
@@ -184,7 +184,7 @@
   50% { opacity: 1; box-shadow: var(--tl-glow-strong); }
 }
 
-/* ─── Utility: amber glow border on focus ─── */
+/* ─── Utility: blue glow border on focus ─── */
 @layer utilities {
   .tl-focus-ring:focus-visible {
     outline: 2px solid var(--primary);
