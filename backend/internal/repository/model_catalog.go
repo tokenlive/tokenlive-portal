@@ -56,10 +56,11 @@ type PublicModelDetail struct {
 }
 
 type PublicModelPrice struct {
-	Currency                     string
-	InputMicroCNYPer1MTokens     int64
-	OutputMicroCNYPer1MTokens    int64
-	CacheReadMicroCNYPer1MTokens *int64
+	Currency            string
+	InputPrice          float64
+	OutputPrice         float64
+	CachedPrice         *float64
+	CacheCreationPrice  *float64
 }
 
 type PublicModelMetric struct {
@@ -237,11 +238,12 @@ type publicModelDetailRow struct {
 }
 
 type publicModelPriceRow struct {
-	ModelID                      string
-	Currency                     string
-	InputMicroCNYPer1MTokens     int64
-	OutputMicroCNYPer1MTokens    int64
-	CacheReadMicroCNYPer1MTokens *int64
+	ModelID             string
+	Currency            string
+	InputPrice          float64
+	OutputPrice         float64
+	CachedPrice         *float64
+	CacheCreationPrice  *float64
 }
 
 type publicModelMetricRow struct {
@@ -365,9 +367,10 @@ func (r *Repositories) loadCurrentPrices(ctx context.Context, modelIDs []string,
 		Select(`
 			p.model_id,
 			p.currency,
-			p.input_micro_cny_per_1m_tokens,
-			p.output_micro_cny_per_1m_tokens,
-			p.cache_read_micro_cny_per_1m_tokens
+			p.input_price,
+			p.output_price,
+			p.cached_price,
+			p.cache_creation_price
 		`).
 		Joins("JOIN (?) AS current ON current.model_id = p.model_id AND current.effective_from = p.effective_from", subquery).
 		Scan(&rows).Error; err != nil {
@@ -377,10 +380,11 @@ func (r *Repositories) loadCurrentPrices(ctx context.Context, modelIDs []string,
 	priceByModelID := make(map[string]*PublicModelPrice, len(rows))
 	for _, row := range rows {
 		price := PublicModelPrice{
-			Currency:                     row.Currency,
-			InputMicroCNYPer1MTokens:     row.InputMicroCNYPer1MTokens,
-			OutputMicroCNYPer1MTokens:    row.OutputMicroCNYPer1MTokens,
-			CacheReadMicroCNYPer1MTokens: row.CacheReadMicroCNYPer1MTokens,
+			Currency:           row.Currency,
+			InputPrice:         row.InputPrice,
+			OutputPrice:        row.OutputPrice,
+			CachedPrice:        row.CachedPrice,
+			CacheCreationPrice: row.CacheCreationPrice,
 		}
 		priceByModelID[row.ModelID] = &price
 	}

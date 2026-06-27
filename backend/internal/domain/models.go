@@ -280,9 +280,10 @@ type ModelPriceVersion struct {
 	ID                           string           `gorm:"primaryKey;size:32"`
 	ModelID                      string           `gorm:"size:191;not null;uniqueIndex:uk_model_price_versions_model_effective,priority:1;index:idx_model_price_versions_current,priority:1"`
 	Currency                     string           `gorm:"size:8;not null"`
-	InputMicroCNYPer1MTokens     int64            `gorm:"column:input_micro_cny_per_1m_tokens;not null"`
-	OutputMicroCNYPer1MTokens    int64            `gorm:"column:output_micro_cny_per_1m_tokens;not null"`
-	CacheReadMicroCNYPer1MTokens *int64           `gorm:"column:cache_read_micro_cny_per_1m_tokens"`
+	InputPrice                   float64          `gorm:"column:input_price;not null"`
+	OutputPrice                  float64          `gorm:"column:output_price;not null"`
+	CachedPrice                  *float64         `gorm:"column:cached_price"`
+	CacheCreationPrice           *float64         `gorm:"column:cache_creation_price"`
 	EffectiveFrom                time.Time        `gorm:"not null;uniqueIndex:uk_model_price_versions_model_effective,priority:2;index:idx_model_price_versions_current,priority:3"`
 	EffectiveUntil               *time.Time       `gorm:"index:idx_model_price_versions_current,priority:4"`
 	Status                       ModelPriceStatus `gorm:"size:32;not null;index:idx_model_price_versions_current,priority:2"`

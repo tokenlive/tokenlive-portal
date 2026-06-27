@@ -95,12 +95,24 @@ export default async function ModelDetailPage({ params }: Props) {
               <>
                 <InfoCard
                   label="Input Price"
-                  value={`¥${(model.price.input_micro_cny_per_1m_tokens / 1000000).toFixed(2)}/1M`}
+                  value={`¥${Number(model.price.input_price).toFixed(2)}/1M`}
                 />
                 <InfoCard
                   label="Output Price"
-                  value={`¥${(model.price.output_micro_cny_per_1m_tokens / 1000000).toFixed(2)}/1M`}
+                  value={`¥${Number(model.price.output_price).toFixed(2)}/1M`}
                 />
+                {model.price.cached_price != null && (
+                  <InfoCard
+                    label="Cache Hit Price"
+                    value={`¥${Number(model.price.cached_price).toFixed(2)}/1M`}
+                  />
+                )}
+                {model.price.cache_creation_price != null && (
+                  <InfoCard
+                    label="Cache Creation Price"
+                    value={`¥${Number(model.price.cache_creation_price).toFixed(2)}/1M`}
+                  />
+                )}
               </>
             )}
             {model.metrics && model.metrics.ttft_p50_ms && (

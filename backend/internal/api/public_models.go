@@ -106,10 +106,11 @@ type publicModelDetailPayload struct {
 }
 
 type publicModelPricePayload struct {
-	Currency                     string `json:"currency"`
-	InputMicroCNYPer1MTokens     int64  `json:"input_micro_cny_per_1m_tokens"`
-	OutputMicroCNYPer1MTokens    int64  `json:"output_micro_cny_per_1m_tokens"`
-	CacheReadMicroCNYPer1MTokens *int64 `json:"cache_read_micro_cny_per_1m_tokens,omitempty"`
+	Currency            string   `json:"currency"`
+	InputPrice          float64  `json:"input_price"`
+	OutputPrice         float64  `json:"output_price"`
+	CachedPrice         *float64 `json:"cached_price,omitempty"`
+	CacheCreationPrice  *float64 `json:"cache_creation_price,omitempty"`
 }
 
 type publicModelMetricPayload struct {
@@ -215,10 +216,11 @@ func marshalPublicModelList(model repository.PublicModel) publicModelListPayload
 	}
 	if model.Price != nil {
 		payload.Price = &publicModelPricePayload{
-			Currency:                     model.Price.Currency,
-			InputMicroCNYPer1MTokens:     model.Price.InputMicroCNYPer1MTokens,
-			OutputMicroCNYPer1MTokens:    model.Price.OutputMicroCNYPer1MTokens,
-			CacheReadMicroCNYPer1MTokens: model.Price.CacheReadMicroCNYPer1MTokens,
+			Currency:           model.Price.Currency,
+			InputPrice:         model.Price.InputPrice,
+			OutputPrice:        model.Price.OutputPrice,
+			CachedPrice:        model.Price.CachedPrice,
+			CacheCreationPrice: model.Price.CacheCreationPrice,
 		}
 	}
 	if model.Metrics != nil {

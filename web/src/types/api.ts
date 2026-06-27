@@ -20,9 +20,10 @@ export interface ModelListItem {
 
 export interface ModelPrice {
   currency: string;
-  input_micro_cny_per_1m_tokens: number;
-  output_micro_cny_per_1m_tokens: number;
-  cache_read_micro_cny_per_1m_tokens?: number;
+  input_price: number;
+  output_price: number;
+  cached_price?: number;
+  cache_creation_price?: number;
 }
 
 export interface ModelMetrics {

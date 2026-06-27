@@ -13,11 +13,9 @@ const MODALITY_BADGE: Record<string, string> = {
   video: "Video",
 };
 
-function formatPrice(microCny: number | undefined): string {
-  if (microCny === undefined) return "—";
-  // Convert micro CNY to CNY per 1M tokens
-  const cny = microCny / 1000000;
-  return cny.toFixed(2);
+function formatPrice(price: number | undefined): string {
+  if (price === undefined) return "—";
+  return Number(price).toFixed(2);
 }
 
 export function ModelCard({ model }: ModelCardProps) {
@@ -104,11 +102,11 @@ export function ModelCard({ model }: ModelCardProps) {
           {/* Pricing */}
           <div className="flex items-center gap-2 font-mono">
             <span className="text-muted-foreground">
-              <span className="text-foreground">¥{formatPrice(model.price?.input_micro_cny_per_1m_tokens)}</span>
+              <span className="text-foreground">¥{formatPrice(model.price?.input_price)}</span>
               /1M in
             </span>
             <span className="text-muted-foreground">
-              <span className="text-foreground">¥{formatPrice(model.price?.output_micro_cny_per_1m_tokens)}</span>
+              <span className="text-foreground">¥{formatPrice(model.price?.output_price)}</span>
               /1M out
             </span>
           </div>

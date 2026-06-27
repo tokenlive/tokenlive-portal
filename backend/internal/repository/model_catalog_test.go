@@ -176,39 +176,39 @@ func TestGetPublicModelBySlugIncludesCurrentPriceAndMetrics(t *testing.T) {
 	expiredUntil := now.Add(-2 * time.Hour)
 	currentFrom := now.Add(-30 * time.Minute)
 	futureFrom := now.Add(2 * time.Hour)
-	cacheReadPrice := int64(300)
+	cacheReadPrice := 0.000300
 	prices := []domain.ModelPriceVersion{
 		{
-			ID:                        "prc-exp-" + suffix,
-			ModelID:                   modelID,
-			Currency:                  "CNY",
-			InputMicroCNYPer1MTokens:  1000,
-			OutputMicroCNYPer1MTokens: 2000,
-			EffectiveFrom:             now.Add(-4 * time.Hour),
-			EffectiveUntil:            &expiredUntil,
-			Status:                    domain.ModelPriceStatusActive,
-			PublishedAt:               now.Add(-4 * time.Hour),
+			ID:            "prc-exp-" + suffix,
+			ModelID:       modelID,
+			Currency:      "CNY",
+			InputPrice:    0.001000,
+			OutputPrice:   0.002000,
+			EffectiveFrom: now.Add(-4 * time.Hour),
+			EffectiveUntil: &expiredUntil,
+			Status:        domain.ModelPriceStatusActive,
+			PublishedAt:   now.Add(-4 * time.Hour),
 		},
 		{
-			ID:                           "prc-cur-" + suffix,
-			ModelID:                      modelID,
-			Currency:                     "CNY",
-			InputMicroCNYPer1MTokens:     3000,
-			OutputMicroCNYPer1MTokens:    4000,
-			CacheReadMicroCNYPer1MTokens: &cacheReadPrice,
-			EffectiveFrom:                currentFrom,
-			Status:                       domain.ModelPriceStatusActive,
-			PublishedAt:                  currentFrom,
+			ID:           "prc-cur-" + suffix,
+			ModelID:      modelID,
+			Currency:     "CNY",
+			InputPrice:   0.003000,
+			OutputPrice:  0.004000,
+			CachedPrice:  &cacheReadPrice,
+			EffectiveFrom: currentFrom,
+			Status:       domain.ModelPriceStatusActive,
+			PublishedAt:  currentFrom,
 		},
 		{
-			ID:                        "prc-fut-" + suffix,
-			ModelID:                   modelID,
-			Currency:                  "CNY",
-			InputMicroCNYPer1MTokens:  9000,
-			OutputMicroCNYPer1MTokens: 10000,
-			EffectiveFrom:             futureFrom,
-			Status:                    domain.ModelPriceStatusActive,
-			PublishedAt:               futureFrom,
+			ID:            "prc-fut-" + suffix,
+			ModelID:       modelID,
+			Currency:      "CNY",
+			InputPrice:    0.009000,
+			OutputPrice:   0.010000,
+			EffectiveFrom: futureFrom,
+			Status:        domain.ModelPriceStatusActive,
+			PublishedAt:   futureFrom,
 		},
 	}
 	if err := db.Create(&prices).Error; err != nil {
@@ -274,11 +274,11 @@ func TestGetPublicModelBySlugIncludesCurrentPriceAndMetrics(t *testing.T) {
 	if detail.Price == nil {
 		t.Fatalf("expected active price")
 	}
-	if detail.Price.InputMicroCNYPer1MTokens != 3000 || detail.Price.OutputMicroCNYPer1MTokens != 4000 {
+	if detail.Price.InputPrice != 0.003000 || detail.Price.OutputPrice != 0.004000 {
 		t.Fatalf("got price %#v", detail.Price)
 	}
-	if detail.Price.CacheReadMicroCNYPer1MTokens == nil || *detail.Price.CacheReadMicroCNYPer1MTokens != cacheReadPrice {
-		t.Fatalf("got cache read price %#v", detail.Price.CacheReadMicroCNYPer1MTokens)
+	if detail.Price.CachedPrice == nil || *detail.Price.CachedPrice != cacheReadPrice {
+		t.Fatalf("got cache read price %#v", detail.Price.CachedPrice)
 	}
 	if detail.Metrics == nil || detail.Metrics.Window != "24h" {
 		t.Fatalf("got summary metrics %#v", detail.Metrics)

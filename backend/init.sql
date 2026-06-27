@@ -71,27 +71,6 @@ CREATE TABLE model_catalog_i18n (
     CONSTRAINT fk_model_catalog_i18n_model FOREIGN KEY (model_id) REFERENCES model_catalogs(model_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型目录多语言内容表';
 
-CREATE TABLE model_price_versions (
-    id VARCHAR(32) PRIMARY KEY COMMENT '价格版本ID',
-    model_id VARCHAR(191) NOT NULL COMMENT '模型ID',
-    currency VARCHAR(8) NOT NULL COMMENT '计价货币',
-    input_micro_cny_per_1m_tokens BIGINT NOT NULL COMMENT '每百万输入token价格',
-    output_micro_cny_per_1m_tokens BIGINT NOT NULL COMMENT '每百万输出token价格',
-    cache_read_micro_cny_per_1m_tokens BIGINT NULL COMMENT '每百万缓存读取token价格',
-    effective_from DATETIME(3) NOT NULL COMMENT '生效开始时间',
-    effective_until DATETIME(3) NULL COMMENT '生效结束时间',
-    status VARCHAR(32) NOT NULL COMMENT '价格状态',
-    published_by_user_id VARCHAR(32) NULL COMMENT '发布人用户ID',
-    published_at DATETIME(3) NOT NULL COMMENT '发布时间',
-    UNIQUE KEY uk_model_price_versions_model_effective (model_id, effective_from),
-    KEY idx_model_price_versions_current (model_id, status, effective_from, effective_until),
-    CONSTRAINT fk_model_price_versions_model FOREIGN KEY (model_id) REFERENCES model_catalogs(model_id),
-    CONSTRAINT fk_model_price_versions_published_by FOREIGN KEY (published_by_user_id) REFERENCES users(id),
-    CONSTRAINT chk_model_price_versions_input_nonnegative CHECK (input_micro_cny_per_1m_tokens >= 0),
-    CONSTRAINT chk_model_price_versions_output_nonnegative CHECK (output_micro_cny_per_1m_tokens >= 0),
-    CONSTRAINT chk_model_price_versions_cache_nonnegative CHECK (cache_read_micro_cny_per_1m_tokens IS NULL OR cache_read_micro_cny_per_1m_tokens >= 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型价格版本表';
-
 CREATE TABLE model_service_metrics (
     model_id VARCHAR(191) NOT NULL COMMENT '模型ID',
     window VARCHAR(16) NOT NULL COMMENT '统计窗口',
