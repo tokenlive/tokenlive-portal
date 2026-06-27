@@ -396,21 +396,11 @@ func (r *Repositories) loadDisplayMetrics(ctx context.Context, modelIDs []string
 	rows := make([]publicModelMetricRow, 0)
 	if err := r.db.WithContext(ctx).
 		Table("model_service_metrics").
-		Select(`
-			model_id,
-			window,
-			availability,
-			ttft_p50_ms,
-			ttft_p95_ms,
-			response_speed,
-			success_rate,
-			sample_count,
-			updated_at
-		`).
+		Select("model_id, `window`, availability, ttft_p50_ms, ttft_p95_ms, response_speed, success_rate, sample_count, updated_at").
 		Where("model_id IN ?", modelIDs).
-		Where("window IN ?", []string{"24h", "7d"}).
+		Where("`window` IN ?", []string{"24h", "7d"}).
 		Where("sample_count >= ?", MinPublicMetricSampleCount).
-		Order("CASE window WHEN '24h' THEN 0 WHEN '7d' THEN 1 ELSE 2 END ASC").
+		Order("CASE `window` WHEN '24h' THEN 0 WHEN '7d' THEN 1 ELSE 2 END ASC").
 		Order("updated_at DESC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load public metrics: %w", err)

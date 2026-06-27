@@ -13,12 +13,13 @@ const (
 )
 
 type Config struct {
-	Env         string
-	HTTPAddr    string
-	DatabaseDSN string
-	AuthPepper  string
-	TrialCredit TrialCreditConfig
-	GoogleOAuth GoogleOAuthConfig
+	Env              string
+	HTTPAddr         string
+	DatabaseDSN      string
+	AuthPepper       string
+	InternalAPIToken string
+	TrialCredit      TrialCreditConfig
+	GoogleOAuth      GoogleOAuthConfig
 }
 
 type GoogleOAuthConfig struct {
@@ -43,18 +44,24 @@ func Load() (Config, error) {
 		authPepper = "dev-auth-pepper"
 	}
 
+	internalAPIToken := os.Getenv("PORTAL_INTERNAL_API_TOKEN")
+	if internalAPIToken == "" && env != "production" {
+		internalAPIToken = "dev-internal-token"
+	}
+
 	trialCredit, err := loadTrialCreditConfig()
 	if err != nil {
 		return Config{}, err
 	}
 
 	return Config{
-		Env:         env,
-		HTTPAddr:    envOrDefault("PORTAL_HTTP_ADDR", ":8080"),
-		DatabaseDSN: os.Getenv("PORTAL_DATABASE_DSN"),
-		AuthPepper:  authPepper,
-		TrialCredit: trialCredit,
-		GoogleOAuth: loadGoogleOAuthConfig(),
+		Env:              env,
+		HTTPAddr:         envOrDefault("PORTAL_HTTP_ADDR", ":8080"),
+		DatabaseDSN:      os.Getenv("PORTAL_DATABASE_DSN"),
+		AuthPepper:       authPepper,
+		InternalAPIToken: internalAPIToken,
+		TrialCredit:      trialCredit,
+		GoogleOAuth:      loadGoogleOAuthConfig(),
 	}, nil
 }
 

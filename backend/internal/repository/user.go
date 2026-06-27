@@ -98,3 +98,16 @@ func (r *Repositories) CreateUserWithDefaultWorkspace(ctx context.Context, input
 
 	return result, nil
 }
+
+func (r *Repositories) SearchUsers(ctx context.Context, keyword string, limit int) ([]domain.User, error) {
+	var users []domain.User
+	db := r.db.WithContext(ctx).Model(&domain.User{}).Where("deleted_at IS NULL")
+	if keyword != "" {
+		db = db.Where("id = ? OR display_name LIKE ? OR primary_email LIKE ?", keyword, "%"+keyword+"%", "%"+keyword+"%")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	err := db.Limit(limit).Find(&users).Error
+	return users, err
+}

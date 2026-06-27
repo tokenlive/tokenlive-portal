@@ -205,3 +205,120 @@ func TestResolveCurrentWorkspaceReturnsNotFoundWithoutActiveMembership(t *testin
 		t.Fatalf("err = %v, want ErrWorkspaceNotFound", err)
 	}
 }
+
+func TestBindTenantCode(t *testing.T) {
+	db := testDB(t)
+	repos := New(db)
+	ctx := context.Background()
+	suffix := uniqueSuffix(t)
+
+	email := "workspace-bind-" + suffix + "@example.com"
+	userResult, err := repos.CreateUserWithDefaultWorkspace(ctx, CreateUserWithWorkspaceInput{
+		DisplayName:   "Bind Test",
+		PrimaryEmail:  &email,
+		WorkspaceName: "Bind Workspace",
+		WorkspaceSlug: "bind-" + suffix,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	wsID := userResult.Workspace.ID
+
+	// 1. 验证初始状态 tenant_code 为空
+	var ws domain.Workspace
+	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
+		t.Fatalf("get workspace: %v", err)
+	}
+	if ws.TenantCode != nil {
+		t.Errorf("expected nil TenantCode, got %s", *ws.TenantCode)
+	}
+
+	// 2. 绑定租户
+	tenant := "company-a"
+	if err := repos.BindTenantCode(ctx, wsID, &tenant); err != nil {
+		t.Fatalf("bind tenant failed: %v", err)
+	}
+
+	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
+		t.Fatalf("get workspace: %v", err)
+	}
+	if ws.TenantCode == nil || *ws.TenantCode != tenant {
+		t.Errorf("expected TenantCode %s, got %+v", tenant, ws.TenantCode)
+	}
+
+	// 3. 解绑租户
+	if err := repos.BindTenantCode(ctx, wsID, nil); err != nil {
+		t.Fatalf("unbind tenant failed: %v", err)
+	}
+
+	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
+		t.Fatalf("get workspace: %v", err)
+	}
+	if ws.TenantCode != nil {
+		t.Errorf("expected nil TenantCode after unbind, got %s", *ws.TenantCode)
+	}
+
+	// 4. 绑定不存在的 WorkspaceID
+	err = repos.BindTenantCode(ctx, "non-existent-id", &tenant)
+	if !errors.Is(err, ErrWorkspaceNotFound) {
+		t.Errorf("expected ErrWorkspaceNotFound, got %v", err)
+	}
+}
+
+func TestSearchWorkspaces(t *testing.T) {
+	db := testDB(t)
+	repos := New(db)
+	ctx := context.Background()
+	suffix := uniqueSuffix(t)
+
+	email1 := "search-ws-1-" + suffix + "@example.com"
+	ws1, err := repos.CreateUserWithDefaultWorkspace(ctx, CreateUserWithWorkspaceInput{
+		DisplayName:   "User 1",
+		PrimaryEmail:  &email1,
+		WorkspaceName: "Search Alpha " + suffix,
+		WorkspaceSlug: "alpha-" + suffix,
+	})
+	if err != nil {
+		t.Fatalf("create workspace 1: %v", err)
+	}
+
+	email2 := "search-ws-2-" + suffix + "@example.com"
+	ws2, err := repos.CreateUserWithDefaultWorkspace(ctx, CreateUserWithWorkspaceInput{
+		DisplayName:   "User 2",
+		PrimaryEmail:  &email2,
+		WorkspaceName: "Search Beta " + suffix,
+		WorkspaceSlug: "beta-" + suffix,
+	})
+	if err != nil {
+		t.Fatalf("create workspace 2: %v", err)
+	}
+
+	// 1. 通过包含唯一后缀的关键字搜索
+	results, err := repos.SearchWorkspaces(ctx, suffix, 10)
+	if err != nil {
+		t.Fatalf("search workspaces failed: %v", err)
+	}
+	if len(results) < 2 {
+		t.Errorf("expected at least 2 results, got %d", len(results))
+	}
+
+	// 2. 通过精确的名称关键字搜索
+	results, err = repos.SearchWorkspaces(ctx, "Search Alpha "+suffix, 10)
+	if err != nil {
+		t.Fatalf("search workspaces failed: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != ws1.Workspace.ID {
+		t.Errorf("expected only workspace 1, got %+v", results)
+	}
+
+	// 3. 通过精确 ID 搜索
+	results, err = repos.SearchWorkspaces(ctx, ws2.Workspace.ID, 10)
+	if err != nil {
+		t.Fatalf("search workspaces failed: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != ws2.Workspace.ID {
+		t.Errorf("expected only workspace 2, got %+v", results)
+	}
+}
+

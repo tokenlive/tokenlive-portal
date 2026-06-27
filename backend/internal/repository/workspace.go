@@ -170,3 +170,32 @@ func (r *Repositories) GrantWorkspaceModel(ctx context.Context, workspaceID stri
 
 	return nil
 }
+
+// BindTenantCode binds a tenant_code to a workspace. If tenantCode is nil, it unbinds the tenant.
+func (r *Repositories) BindTenantCode(ctx context.Context, id string, tenantCode *string) error {
+	result := r.db.WithContext(ctx).Model(&domain.Workspace{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Update("tenant_code", tenantCode)
+	if result.Error != nil {
+		return fmt.Errorf("bind tenant code: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrWorkspaceNotFound
+	}
+	return nil
+}
+
+// SearchWorkspaces searches workspaces by ID, name, or slug.
+func (r *Repositories) SearchWorkspaces(ctx context.Context, keyword string, limit int) ([]domain.Workspace, error) {
+	var workspaces []domain.Workspace
+	db := r.db.WithContext(ctx).Model(&domain.Workspace{}).Where("deleted_at IS NULL")
+	if keyword != "" {
+		db = db.Where("id = ? OR name LIKE ? OR slug LIKE ?", keyword, "%"+keyword+"%", "%"+keyword+"%")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	err := db.Limit(limit).Find(&workspaces).Error
+	return workspaces, err
+}
+

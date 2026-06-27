@@ -133,6 +133,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 	registerPortalAuthRoutes(mux, authService, cfg.Env)
 	registerPortalOAuthRoutes(mux, authService, cfg.Env)
 	registerPortalConsoleRoutes(mux, consoleService, authService)
+	api.RegisterInternalRoutes(mux, modelRepository, cfg.InternalAPIToken)
 
 	return cleanup, nil
 }

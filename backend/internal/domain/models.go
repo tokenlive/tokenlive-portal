@@ -107,6 +107,7 @@ type Workspace struct {
 	Name            string          `gorm:"size:160;not null"`
 	Slug            string          `gorm:"size:160;not null;uniqueIndex:uk_workspaces_slug"`
 	OwnerUserID     string          `gorm:"size:32;not null;index"`
+	TenantCode      *string         `gorm:"size:64;default:null"`
 	Status          WorkspaceStatus `gorm:"size:32;not null"`
 	TrialGrantedAt  *time.Time
 	CreatedByUserID string         `gorm:"size:32;not null;index"`

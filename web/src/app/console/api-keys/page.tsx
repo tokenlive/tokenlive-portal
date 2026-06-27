@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { listAPIKeys, createAPIKey, updateAPIKeyStatus } from "@/lib/api";
+import { buildCreateAPIKeyRequest, formatAPIKeyLimit } from "@/lib/api-key-form";
 import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 import type { APIKeyResponse } from "@/types/api";
 
@@ -13,6 +14,9 @@ export default function APIKeysPage() {
   const [busyKeyID, setBusyKeyID] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [dailyLimitCNY, setDailyLimitCNY] = useState("");
+  const [monthlyLimitCNY, setMonthlyLimitCNY] = useState("");
+  const [expiresOn, setExpiresOn] = useState("");
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +44,19 @@ export default function APIKeysPage() {
     e.preventDefault();
     setError(null);
     try {
-      const res = await createAPIKey({ name: newKeyName.trim() });
+      const res = await createAPIKey(
+        buildCreateAPIKeyRequest({
+          name: newKeyName,
+          dailyLimitCNY,
+          monthlyLimitCNY,
+          expiresOn,
+        })
+      );
       setCreatedSecret(res.secret);
       setNewKeyName("");
+      setDailyLimitCNY("");
+      setMonthlyLimitCNY("");
+      setExpiresOn("");
       setShowCreate(false);
       loadKeys();
     } catch (err) {
@@ -140,36 +154,59 @@ export default function APIKeysPage() {
           onSubmit={handleCreate}
           className="mb-6 rounded-lg border border-border bg-card p-4"
         >
-          <label
-            htmlFor="key-name"
-            className="block text-sm font-medium text-foreground mb-2"
-          >
-            Key name
-          </label>
-          <div className="flex gap-3">
-            <input
-              id="key-name"
-              type="text"
-              required
-              value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="e.g. development, production"
-              className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-              autoFocus
-            />
-            <button
-              type="submit"
-              disabled={!newKeyName}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              Create
-            </button>
+          <div className="grid gap-4 lg:grid-cols-[1fr_180px_180px_180px]">
+            <Field label="Key name" htmlFor="key-name">
+              <input
+                id="key-name"
+                type="text"
+                required
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="e.g. production"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                autoFocus
+              />
+            </Field>
+            <Field label="Daily limit" htmlFor="daily-limit">
+              <MoneyInput
+                id="daily-limit"
+                value={dailyLimitCNY}
+                onChange={setDailyLimitCNY}
+                placeholder="No limit"
+              />
+            </Field>
+            <Field label="Monthly limit" htmlFor="monthly-limit">
+              <MoneyInput
+                id="monthly-limit"
+                value={monthlyLimitCNY}
+                onChange={setMonthlyLimitCNY}
+                placeholder="No limit"
+              />
+            </Field>
+            <Field label="Expires on" htmlFor="expires-on">
+              <input
+                id="expires-on"
+                type="date"
+                value={expiresOn}
+                onChange={(e) => setExpiresOn(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </Field>
+          </div>
+          <div className="mt-4 flex justify-end gap-3">
             <button
               type="button"
               onClick={() => setShowCreate(false)}
-              className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+              className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!newKeyName.trim()}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              Create key
             </button>
           </div>
           {error && (
@@ -213,8 +250,11 @@ export default function APIKeysPage() {
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Spend
                   </th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                    Limits
+                  </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                    Created
+                    Expires
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                     Actions
@@ -240,8 +280,16 @@ export default function APIKeysPage() {
                     <td className="px-4 py-3 text-muted-foreground">
                       {key.total_spend_cny}
                     </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      <div className="space-y-0.5 text-xs">
+                        <p>Daily {formatAPIKeyLimit(key.daily_limit_micro_cny)}</p>
+                        <p>Monthly {formatAPIKeyLimit(key.monthly_limit_micro_cny)}</p>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
-                      {new Date(key.created_at).toLocaleDateString()}
+                      {key.expires_at
+                        ? new Date(key.expires_at).toLocaleDateString()
+                        : "Never"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -287,6 +335,55 @@ export default function APIKeysPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label htmlFor={htmlFor} className="block">
+      <span className="mb-2 block text-sm font-medium text-foreground">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function MoneyInput({
+  id,
+  value,
+  onChange,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+        ¥
+      </span>
+      <input
+        id={id}
+        type="number"
+        min="0"
+        step="0.01"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-md border border-input bg-background pl-7 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+      />
     </div>
   );
 }

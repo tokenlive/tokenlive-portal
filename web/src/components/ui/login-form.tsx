@@ -1,4 +1,5 @@
 "use client";
+import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
 import { User, Lock, ArrowRight } from 'lucide-react';
 
@@ -82,7 +83,7 @@ export function SmokeyBackground({
   backdropBlurAmount = "sm",
   color = "#1E40AF", // Default dark blue
   className = "",
-}: SmokeyBackgroundProps): JSX.Element {
+}: SmokeyBackgroundProps): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isHovering, setIsHovering] = useState(false);
@@ -148,7 +149,7 @@ export function SmokeyBackground({
     const iMouseLocation = gl.getUniformLocation(program, "iMouse");
     const uColorLocation = gl.getUniformLocation(program, "u_color");
 
-    let startTime = Date.now();
+    const startTime = Date.now();
     const [r, g, b] = hexToRgb(color);
     gl.uniform3f(uColorLocation, r, g, b);
 
@@ -277,7 +278,7 @@ export function LoginForm() {
 
       </form>
        <p className="text-center text-xs text-gray-400">
-        Don't have an account? <a href="#" className="font-semibold text-blue-400 hover:text-blue-300 transition">Sign Up</a>
+        Don&apos;t have an account? <a href="#" className="font-semibold text-blue-400 hover:text-blue-300 transition">Sign Up</a>
       </p>
     </div>
   );
