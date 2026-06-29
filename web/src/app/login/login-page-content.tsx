@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { startEmailLogin, verifyEmailLogin, GOOGLE_LOGIN_URL } from "@/lib/api";
+import { startEmailLogin, verifyEmailLogin } from "@/lib/api";
 import { getPostLoginPath } from "@/lib/auth-flow";
+import { OAUTH_PROVIDERS } from "@/lib/oauth-providers";
 
 type Step = "email" | "code";
 
@@ -199,14 +200,31 @@ export default function LoginPageContent() {
                   </div>
                 </div>
 
-                {/* Google OAuth */}
-                <a
-                  href={GOOGLE_LOGIN_URL}
-                  className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium text-foreground transition-colors hover:bg-secondary tl-focus-ring"
-                >
-                  <GoogleIcon />
-                  Continue with Google
-                </a>
+                <div className="space-y-2">
+                  {OAUTH_PROVIDERS.map((provider) =>
+                    provider.enabled && provider.loginHref ? (
+                      <a
+                        key={provider.id}
+                        href={provider.loginHref}
+                        className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium text-foreground transition-colors hover:bg-secondary tl-focus-ring"
+                      >
+                        <ProviderIcon provider={provider.id} />
+                        Continue with {provider.label}
+                      </a>
+                    ) : (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        disabled
+                        className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium text-muted-foreground opacity-70"
+                        title={provider.unavailableLabel || undefined}
+                      >
+                        <ProviderIcon provider={provider.id} />
+                        {provider.label} unavailable
+                      </button>
+                    )
+                  )}
+                </div>
               </>
             )}
 
@@ -229,7 +247,20 @@ export default function LoginPageContent() {
   );
 }
 
-function GoogleIcon() {
+function ProviderIcon({ provider }: { provider: string }) {
+  if (provider === "github") {
+    return (
+      <svg
+        className="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M12 2C6.48 2 2 6.59 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.51.47-3.16-.63-3.36-1.21-.11-.3-.6-1.21-1.03-1.46-.35-.19-.85-.66-.01-.67.79-.01 1.35.74 1.54 1.05.9 1.55 2.34 1.11 2.91.85.09-.67.35-1.11.64-1.37-2.22-.26-4.55-1.14-4.55-5.05 0-1.11.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 6.98c.85 0 1.71.12 2.51.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.92-2.34 4.79-4.57 5.05.36.32.68.93.68 1.89 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.08 10.08 0 0 0 22 12.25C22 6.59 17.52 2 12 2Z" />
+      </svg>
+    );
+  }
+
   return (
     <svg className="h-4 w-4" viewBox="0 0 24 24">
       <path

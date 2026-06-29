@@ -62,21 +62,23 @@ Implemented:
 - Logout.
 - Development/test code return behavior.
 - Google OAuth login (`GET /api/auth/google/login` → 302 redirect, `GET /api/auth/google/callback` → create user + session).
+- GitHub OAuth login (`GET /api/auth/github/login` → 302 redirect, `GET /api/auth/github/callback` → create user + session).
 - Cookie-based CSRF state parameter for OAuth.
 - Google account binding for existing users (`GET /api/auth/google/bind`, `GET /api/auth/google/bind/callback`).
+- GitHub account binding for existing users (`GET /api/auth/github/bind`, `GET /api/auth/github/bind/callback`).
 - List bound OAuth accounts (`GET /api/auth/oauth/accounts`).
 - Terms acceptance checkpoint (`POST /api/auth/accept-terms`); creates default Workspace + grants trial credit.
 - `terms_accepted_at` field on users table; existing users backfilled on migration.
 - Console routes reject requests with `auth.terms_required` when terms not accepted.
-- Email-collision rejection: Google OAuth returns `auth.email_taken` if email already registered via email-code login.
+- Email-collision rejection: OAuth returns `auth.email_taken` if email already registered via email-code login.
 - Reuse extracted `createDefaultWorkspaceInTx` for both email-login and OAuth onboarding flows.
 - Configurable `GoogleOAuthConfig` via `PORTAL_GOOGLE_CLIENT_ID`, `PORTAL_GOOGLE_CLIENT_SECRET`, `PORTAL_GOOGLE_REDIRECT_URL` environment variables.
+- Configurable `GitHubOAuthConfig` via `PORTAL_GITHUB_CLIENT_ID`, `PORTAL_GITHUB_CLIENT_SECRET`, `PORTAL_GITHUB_REDIRECT_URL` environment variables.
 - `AccountIdentity` table extended with `display_name`, `avatar_url`, `linked_at`, and `(user_id, provider)` unique index.
 
 Still pending:
 
 - Real email delivery integration.
-- GitHub OAuth login.
 - CSRF protection for non-OAuth endpoints and rate limiting.
 
 ### Workspace API Key Console
@@ -107,6 +109,24 @@ Still pending:
 - API key spend enforcement.
 - Workspace switcher.
 - Workspace member and invitation APIs.
+
+### Billing Console
+
+Implemented:
+
+- `GET /api/billing/overview`.
+- `POST /api/billing/recharge-requests`.
+- `recharge_requests` table and repository create/list methods.
+- Owner/billing permission checks for billing operations.
+- Developer role is blocked from billing operations.
+- Manual recharge requests are stored as `pending` records and do not mutate balance before admin review.
+- Console Billing page with balance summary, manual recharge form, and recent request list.
+
+Still pending:
+
+- Admin recharge review integration.
+- Approved recharge ledger entry creation and balance mutation.
+- Recharge request notifications.
 
 ### Trial Credit And Activation Overview
 
@@ -149,7 +169,7 @@ Developer console:
 - API keys frontend.
 - Usage dashboard.
 - Request logs with 15-day retention.
-- Billing and manual recharge request flow.
+- Admin-reviewed recharge completion state.
 - Favorite models.
 - Support tickets.
 - Settings.
@@ -158,7 +178,7 @@ Developer console:
 
 Billing and usage:
 
-- Manual recharge application.
+- Admin recharge approval and rejection.
 - Admin recharge review integration.
 - Consumption ledger from Gateway settlement events.
 - Usage aggregation by day/hour/model/API key.
@@ -167,7 +187,6 @@ Billing and usage:
 
 Authentication:
 
-- GitHub OAuth.
 - Email delivery provider.
 - CSRF protection for non-OAuth endpoints and rate limiting.
 

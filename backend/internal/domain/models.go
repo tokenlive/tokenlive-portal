@@ -15,6 +15,7 @@ type InvitationStatus string
 type APIKeyStatus string
 type LedgerType string
 type LedgerDirection string
+type RechargeRequestStatus string
 type ModelCatalogStatus string
 type ModelCatalogVisibility string
 type ModelPriceStatus string
@@ -56,6 +57,10 @@ const (
 	LedgerDirectionCredit LedgerDirection = "credit"
 	LedgerDirectionDebit  LedgerDirection = "debit"
 
+	RechargeRequestStatusPending  RechargeRequestStatus = "pending"
+	RechargeRequestStatusApproved RechargeRequestStatus = "approved"
+	RechargeRequestStatusRejected RechargeRequestStatus = "rejected"
+
 	ModelCatalogStatusAvailable ModelCatalogStatus = "available"
 	ModelCatalogStatusPaused    ModelCatalogStatus = "paused"
 
@@ -89,17 +94,17 @@ type User struct {
 }
 
 type AccountIdentity struct {
-	ID              string     `gorm:"primaryKey;size:32"`
-	UserID          string     `gorm:"size:32;not null;uniqueIndex:uk_account_identities_user_provider,priority:1"`
-	Provider        string     `gorm:"size:32;not null;uniqueIndex:uk_account_identities_provider_subject,priority:1;uniqueIndex:uk_account_identities_user_provider,priority:2"`
-	ProviderSubject string     `gorm:"size:191;not null;uniqueIndex:uk_account_identities_provider_subject,priority:2"`
-	Email           string     `gorm:"size:320;not null;default:''"`
-	EmailVerified   bool       `gorm:"not null;default:false"`
-	DisplayName     string     `gorm:"size:120;not null;default:''"`
-	AvatarURL       string     `gorm:"size:1024;not null;default:''"`
+	ID              string `gorm:"primaryKey;size:32"`
+	UserID          string `gorm:"size:32;not null;uniqueIndex:uk_account_identities_user_provider,priority:1"`
+	Provider        string `gorm:"size:32;not null;uniqueIndex:uk_account_identities_provider_subject,priority:1;uniqueIndex:uk_account_identities_user_provider,priority:2"`
+	ProviderSubject string `gorm:"size:191;not null;uniqueIndex:uk_account_identities_provider_subject,priority:2"`
+	Email           string `gorm:"size:320;not null;default:''"`
+	EmailVerified   bool   `gorm:"not null;default:false"`
+	DisplayName     string `gorm:"size:120;not null;default:''"`
+	AvatarURL       string `gorm:"size:1024;not null;default:''"`
 	LinkedAt        *time.Time
-	CreatedAt       time.Time  `gorm:"not null"`
-	UpdatedAt       time.Time  `gorm:"not null"`
+	CreatedAt       time.Time `gorm:"not null"`
+	UpdatedAt       time.Time `gorm:"not null"`
 }
 
 type Workspace struct {
@@ -228,6 +233,24 @@ type LedgerEntry struct {
 	CreatedAt                time.Time `gorm:"not null;index:idx_ledger_entries_workspace_created,priority:2"`
 }
 
+type RechargeRequest struct {
+	ID                string                `gorm:"primaryKey;size:32"`
+	WorkspaceID       string                `gorm:"size:32;not null;index:idx_recharge_requests_workspace_created,priority:1"`
+	RequestedByUserID string                `gorm:"size:32;not null;index"`
+	AmountMicroCNY    int64                 `gorm:"not null"`
+	Currency          string                `gorm:"size:8;not null"`
+	Status            RechargeRequestStatus `gorm:"size:32;not null;index"`
+	PaymentMethod     string                `gorm:"size:64;not null;default:''"`
+	Contact           string                `gorm:"size:320;not null;default:''"`
+	Note              string                `gorm:"type:text"`
+	AdminNote         string                `gorm:"type:text"`
+	LedgerEntryID     *string               `gorm:"size:32"`
+	ReviewedByUserID  *string               `gorm:"size:32"`
+	ReviewedAt        *time.Time
+	CreatedAt         time.Time `gorm:"not null;index:idx_recharge_requests_workspace_created,priority:2"`
+	UpdatedAt         time.Time `gorm:"not null"`
+}
+
 type AuditLog struct {
 	ID           string  `gorm:"primaryKey;size:32"`
 	WorkspaceID  *string `gorm:"size:32;index:idx_audit_logs_workspace_created,priority:1"`
@@ -277,18 +300,18 @@ func (ModelCatalogI18n) TableName() string {
 }
 
 type ModelPriceVersion struct {
-	ID                           string           `gorm:"primaryKey;size:32"`
-	ModelID                      string           `gorm:"size:191;not null;uniqueIndex:uk_model_price_versions_model_effective,priority:1;index:idx_model_price_versions_current,priority:1"`
-	Currency                     string           `gorm:"size:8;not null"`
-	InputPrice                   float64          `gorm:"column:input_price;not null"`
-	OutputPrice                  float64          `gorm:"column:output_price;not null"`
-	CachedPrice                  *float64         `gorm:"column:cached_price"`
-	CacheCreationPrice           *float64         `gorm:"column:cache_creation_price"`
-	EffectiveFrom                time.Time        `gorm:"not null;uniqueIndex:uk_model_price_versions_model_effective,priority:2;index:idx_model_price_versions_current,priority:3"`
-	EffectiveUntil               *time.Time       `gorm:"index:idx_model_price_versions_current,priority:4"`
-	Status                       ModelPriceStatus `gorm:"size:32;not null;index:idx_model_price_versions_current,priority:2"`
-	PublishedByUserID            *string          `gorm:"size:32"`
-	PublishedAt                  time.Time        `gorm:"not null"`
+	ID                 string           `gorm:"primaryKey;size:32"`
+	ModelID            string           `gorm:"size:191;not null;uniqueIndex:uk_model_price_versions_model_effective,priority:1;index:idx_model_price_versions_current,priority:1"`
+	Currency           string           `gorm:"size:8;not null"`
+	InputPrice         float64          `gorm:"column:input_price;not null"`
+	OutputPrice        float64          `gorm:"column:output_price;not null"`
+	CachedPrice        *float64         `gorm:"column:cached_price"`
+	CacheCreationPrice *float64         `gorm:"column:cache_creation_price"`
+	EffectiveFrom      time.Time        `gorm:"not null;uniqueIndex:uk_model_price_versions_model_effective,priority:2;index:idx_model_price_versions_current,priority:3"`
+	EffectiveUntil     *time.Time       `gorm:"index:idx_model_price_versions_current,priority:4"`
+	Status             ModelPriceStatus `gorm:"size:32;not null;index:idx_model_price_versions_current,priority:2"`
+	PublishedByUserID  *string          `gorm:"size:32"`
+	PublishedAt        time.Time        `gorm:"not null"`
 }
 
 type ModelServiceMetric struct {

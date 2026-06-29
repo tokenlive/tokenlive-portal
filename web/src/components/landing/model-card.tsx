@@ -1,6 +1,9 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { ModelListItem } from "@/types/api";
+import { buildModelDetailHref, formatModelPrice } from "@/lib/model-display";
 
 interface ModelCardProps {
   model: ModelListItem;
@@ -13,13 +16,9 @@ const MODALITY_BADGE: Record<string, string> = {
   video: "Video",
 };
 
-function formatPrice(price: number | undefined): string {
-  if (price === undefined) return "—";
-  return Number(price).toFixed(2);
-}
-
 export function ModelCard({ model }: ModelCardProps) {
   const displayName = model.display_name || model.slug;
+  const href = buildModelDetailHref(model);
   const inputModalities = (model.input_modalities || [])
     .map((m) => MODALITY_BADGE[m] || m)
     .join(" · ");
@@ -28,16 +27,21 @@ export function ModelCard({ model }: ModelCardProps) {
     .join(" · ");
 
   return (
-    <article className="group relative flex flex-col rounded-lg border border-border bg-card p-5 transition-all hover:border-primary/30 hover:shadow-[0_0_0_1px_var(--primary)/10%]">
+    <Link
+      href={href}
+      className="group relative flex min-h-48 flex-col rounded-lg border border-border bg-card p-5 transition-all hover:border-primary/40 hover:bg-card/90 hover:shadow-[0_0_0_1px_oklch(0.623_0.214_259.815_/_18%)] tl-focus-ring"
+    >
       {/* Header: Logo + Name */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           {model.logo_url ? (
-            <img
+            <Image
               src={model.logo_url}
               alt={displayName}
+              width={36}
+              height={36}
               className="h-9 w-9 rounded-md object-contain"
-              loading="lazy"
+              unoptimized
             />
           ) : (
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted font-heading text-sm font-semibold text-muted-foreground">
@@ -102,16 +106,20 @@ export function ModelCard({ model }: ModelCardProps) {
           {/* Pricing */}
           <div className="flex items-center gap-2 font-mono">
             <span className="text-muted-foreground">
-              <span className="text-foreground">¥{formatPrice(model.price?.input_price)}</span>
-              /1M in
+              <span className="text-foreground">
+                {formatModelPrice(model.price?.input_price)}
+              </span>{" "}
+              in
             </span>
             <span className="text-muted-foreground">
-              <span className="text-foreground">¥{formatPrice(model.price?.output_price)}</span>
-              /1M out
+              <span className="text-foreground">
+                {formatModelPrice(model.price?.output_price)}
+              </span>{" "}
+              out
             </span>
           </div>
         </div>
       </div>
-    </article>
+    </Link>
   );
 }

@@ -117,7 +117,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 
 	modelRepository := newPortalRepositories(db)
 
-	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth)
+	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth, cfg.GitHubOAuth)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("create auth service: %w", err)

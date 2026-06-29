@@ -20,6 +20,7 @@ type Config struct {
 	InternalAPIToken string
 	TrialCredit      TrialCreditConfig
 	GoogleOAuth      GoogleOAuthConfig
+	GitHubOAuth      GitHubOAuthConfig
 }
 
 type GoogleOAuthConfig struct {
@@ -29,6 +30,16 @@ type GoogleOAuthConfig struct {
 }
 
 func (c GoogleOAuthConfig) Enabled() bool {
+	return c.ClientID != "" && c.ClientSecret != "" && c.RedirectURL != ""
+}
+
+type GitHubOAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+func (c GitHubOAuthConfig) Enabled() bool {
 	return c.ClientID != "" && c.ClientSecret != "" && c.RedirectURL != ""
 }
 
@@ -62,6 +73,7 @@ func Load() (Config, error) {
 		InternalAPIToken: internalAPIToken,
 		TrialCredit:      trialCredit,
 		GoogleOAuth:      loadGoogleOAuthConfig(),
+		GitHubOAuth:      loadGitHubOAuthConfig(),
 	}, nil
 }
 
@@ -70,6 +82,14 @@ func loadGoogleOAuthConfig() GoogleOAuthConfig {
 		ClientID:     strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_CLIENT_ID")),
 		ClientSecret: strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_CLIENT_SECRET")),
 		RedirectURL:  strings.TrimSpace(os.Getenv("PORTAL_GOOGLE_REDIRECT_URL")),
+	}
+}
+
+func loadGitHubOAuthConfig() GitHubOAuthConfig {
+	return GitHubOAuthConfig{
+		ClientID:     strings.TrimSpace(os.Getenv("PORTAL_GITHUB_CLIENT_ID")),
+		ClientSecret: strings.TrimSpace(os.Getenv("PORTAL_GITHUB_CLIENT_SECRET")),
+		RedirectURL:  strings.TrimSpace(os.Getenv("PORTAL_GITHUB_REDIRECT_URL")),
 	}
 }
 

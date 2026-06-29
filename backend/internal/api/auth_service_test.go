@@ -16,7 +16,7 @@ import (
 func TestNewAuthServiceRejectsEmptyPepper(t *testing.T) {
 	t.Parallel()
 
-	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -31,7 +31,7 @@ func TestNewAuthServiceRejectsNegativeTrialAmount(t *testing.T) {
 	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: -1,
 		TTLDays:        7,
-	}, config.GoogleOAuthConfig{})
+	}, config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -46,7 +46,7 @@ func TestNewAuthServiceRejectsInvalidTrialTTL(t *testing.T) {
 	_, err := newAuthService(&fakeAuthServiceStore{}, "development", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: 10_000_000,
 		TTLDays:        0,
-	}, config.GoogleOAuthConfig{})
+	}, config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -59,7 +59,7 @@ func TestStartEmailLoginNormalizesEmailAndReturnsDevCode(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeAuthServiceStore{}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestStartEmailLoginOmitsDevCodeOutsideDevelopmentAndTest(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeAuthServiceStore{}
-	service, err := newAuthService(store, "production", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "production", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestVerifyEmailLoginCreatesUserMarksVerifiedAndCreatesSession(t *testing.T)
 	service, err := newAuthService(store, "test", "pepper", config.TrialCreditConfig{
 		AmountMicroCNY: 10_000_000,
 		TTLDays:        7,
-	}, config.GoogleOAuthConfig{})
+	}, config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestVerifyEmailLoginUsesExistingUser(t *testing.T) {
 			},
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestCurrentUserMapsMissingSessionToExpired(t *testing.T) {
 	store := &fakeAuthServiceStore{
 		findActiveSessionErr: repository.ErrSessionNotFound,
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestCurrentUserLoadsUserFromSession(t *testing.T) {
 			EmailVerifiedAt: &verifiedAt,
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}
@@ -297,6 +297,33 @@ func TestCurrentUserLoadsUserFromSession(t *testing.T) {
 	}
 }
 
+func TestGitHubAuthURLUsesConfiguredProvider(t *testing.T) {
+	t.Parallel()
+
+	service, err := newAuthService(&fakeAuthServiceStore{}, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{
+		ClientID:     "github-client",
+		ClientSecret: "github-secret",
+		RedirectURL:  "https://portal.example.com/api/auth/github/callback",
+	})
+	if err != nil {
+		t.Fatalf("new auth service: %v", err)
+	}
+
+	got := service.GetGitHubAuthURL("state123")
+	if !strings.HasPrefix(got, "https://github.com/login/oauth/authorize?") {
+		t.Fatalf("auth url = %q", got)
+	}
+	if !strings.Contains(got, "client_id=github-client") {
+		t.Fatalf("auth url missing client id: %q", got)
+	}
+	if !strings.Contains(got, "state=state123") {
+		t.Fatalf("auth url missing state: %q", got)
+	}
+	if !strings.Contains(got, "scope=read%3Auser+user%3Aemail") {
+		t.Fatalf("auth url missing scope: %q", got)
+	}
+}
+
 func TestLogoutRevokesResolvedSession(t *testing.T) {
 	t.Parallel()
 
@@ -306,7 +333,7 @@ func TestLogoutRevokesResolvedSession(t *testing.T) {
 			UserID: "usr_123",
 		},
 	}
-	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{})
+	service, err := newAuthService(store, "development", "pepper", validTrialCreditConfig(), config.GoogleOAuthConfig{}, config.GitHubOAuthConfig{})
 	if err != nil {
 		t.Fatalf("new auth service: %v", err)
 	}

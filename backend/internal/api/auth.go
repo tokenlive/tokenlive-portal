@@ -13,16 +13,16 @@ import (
 const sessionCookieTTL = 30 * 24 * time.Hour
 
 var (
-	ErrAuthInvalidEmail        = errors.New("auth invalid email")
-	ErrAuthInvalidCode         = errors.New("auth invalid code")
-	ErrAuthUnauthorized        = errors.New("auth unauthorized")
-	ErrAuthSessionRequired     = errors.New("auth session required")
-	ErrAuthSessionExpired      = errors.New("auth session expired")
-	ErrAuthInvalidRequest      = errors.New("auth invalid request")
-	ErrAuthOAuthEmailConflict  = errors.New("auth oauth email conflict")
-	ErrAuthOAuthIdentityBound  = errors.New("auth oauth identity already bound")
+	ErrAuthInvalidEmail         = errors.New("auth invalid email")
+	ErrAuthInvalidCode          = errors.New("auth invalid code")
+	ErrAuthUnauthorized         = errors.New("auth unauthorized")
+	ErrAuthSessionRequired      = errors.New("auth session required")
+	ErrAuthSessionExpired       = errors.New("auth session expired")
+	ErrAuthInvalidRequest       = errors.New("auth invalid request")
+	ErrAuthOAuthEmailConflict   = errors.New("auth oauth email conflict")
+	ErrAuthOAuthIdentityBound   = errors.New("auth oauth identity already bound")
 	ErrAuthTermsAlreadyAccepted = errors.New("auth terms already accepted")
-	ErrAuthOAuthNotConfigured  = errors.New("auth oauth not configured")
+	ErrAuthOAuthNotConfigured   = errors.New("auth oauth not configured")
 )
 
 type authContextKey string
@@ -38,8 +38,11 @@ type AuthService interface {
 	// Google OAuth
 	GetGoogleAuthURL(state string) string
 	HandleGoogleCallback(ctx context.Context, code, ip, userAgent string) (OAuthLoginResult, error)
+	GetGitHubAuthURL(state string) string
+	HandleGitHubCallback(ctx context.Context, code, ip, userAgent string) (OAuthLoginResult, error)
 	AcceptTerms(ctx context.Context, sessionToken string) (AcceptTermsResult, error)
 	HandleGoogleBind(ctx context.Context, sessionToken, code string) (AccountIdentityDTO, error)
+	HandleGitHubBind(ctx context.Context, sessionToken, code string) (AccountIdentityDTO, error)
 	ListAccountIdentities(ctx context.Context, sessionToken string) ([]AccountIdentityDTO, error)
 }
 
@@ -74,7 +77,7 @@ type CurrentUser struct {
 }
 
 type AcceptTermsResult struct {
-	User      CurrentUser `json:"user"`
+	User      CurrentUser  `json:"user"`
 	Workspace WorkspaceDTO `json:"workspace"`
 }
 

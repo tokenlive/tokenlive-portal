@@ -161,6 +161,127 @@ func TestConsoleOverviewReturnsActivationShape(t *testing.T) {
 	}
 }
 
+func TestConsoleBillingOverviewReturnsRechargeRequests(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	console := &fakeConsoleService{
+		billingOverviewResult: BillingOverviewResponse{
+			Workspace: WorkspaceResponse{
+				ID:     "wsp_1",
+				Name:   "Dev",
+				Slug:   "dev",
+				Role:   domain.MemberRoleBilling,
+				Status: domain.WorkspaceStatusActive,
+				Balance: WorkspaceBalanceResponse{
+					AvailableMicroCNY: 10_000_000,
+					AvailableCNY:      "10.000000",
+				},
+			},
+			RechargeRequests: []RechargeRequestResponse{
+				{
+					ID:             "rch_1",
+					AmountMicroCNY: 20_000_000,
+					AmountCNY:      "20.000000",
+					Currency:       "CNY",
+					Status:         domain.RechargeRequestStatusPending,
+					PaymentMethod:  "bank_transfer",
+					Contact:        "ops@example.com",
+					Note:           "invoice needed",
+					CreatedAt:      createdAt,
+					UpdatedAt:      createdAt,
+				},
+			},
+			LedgerEntries: []LedgerEntryResponse{
+				{
+					ID:                   "led_1",
+					Type:                 domain.LedgerTypeTrialGrant,
+					Direction:            domain.LedgerDirectionCredit,
+					AmountMicroCNY:       10_000_000,
+					AmountCNY:            "10.000000",
+					BalanceAfterMicroCNY: 10_000_000,
+					BalanceAfterCNY:      "10.000000",
+					Currency:             "CNY",
+					CreatedAt:            createdAt,
+				},
+			},
+		},
+	}
+	auth := &fakeAuthService{currentUser: CurrentUser{ID: "usr_1"}}
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, console, auth)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/billing/overview", nil)
+	req.AddCookie(&http.Cookie{Name: security.SessionCookieName, Value: "tl_sess_test"})
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body BillingOverviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Workspace.ID != "wsp_1" || body.Workspace.Balance.AvailableCNY != "10.000000" {
+		t.Fatalf("workspace = %+v", body.Workspace)
+	}
+	if len(body.RechargeRequests) != 1 || body.RechargeRequests[0].ID != "rch_1" || body.RechargeRequests[0].AmountCNY != "20.000000" {
+		t.Fatalf("recharge requests = %+v", body.RechargeRequests)
+	}
+	if len(body.LedgerEntries) != 1 || body.LedgerEntries[0].ID != "led_1" || body.LedgerEntries[0].AmountCNY != "10.000000" {
+		t.Fatalf("ledger entries = %+v", body.LedgerEntries)
+	}
+	if console.billingOverviewUser.ID != "usr_1" {
+		t.Fatalf("billing overview user id = %q, want usr_1", console.billingOverviewUser.ID)
+	}
+}
+
+func TestConsoleCreateRechargeRequestPassesRequest(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	console := &fakeConsoleService{
+		createRechargeRequestResult: CreateRechargeRequestResponse{
+			RechargeRequest: RechargeRequestResponse{
+				ID:             "rch_1",
+				AmountMicroCNY: 30_000_000,
+				AmountCNY:      "30.000000",
+				Currency:       "CNY",
+				Status:         domain.RechargeRequestStatusPending,
+				PaymentMethod:  "bank_transfer",
+				Contact:        "ops@example.com",
+				Note:           "top up",
+				CreatedAt:      createdAt,
+				UpdatedAt:      createdAt,
+			},
+		},
+	}
+	auth := &fakeAuthService{currentUser: CurrentUser{ID: "usr_1"}}
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, console, auth)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/billing/recharge-requests", strings.NewReader(`{"amount_micro_cny":30000000,"payment_method":"bank_transfer","contact":"ops@example.com","note":"top up"}`))
+	req.AddCookie(&http.Cookie{Name: security.SessionCookieName, Value: "tl_sess_test"})
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if console.createRechargeRequestInput.AmountMicroCNY != 30_000_000 {
+		t.Fatalf("amount = %d, want 30000000", console.createRechargeRequestInput.AmountMicroCNY)
+	}
+	if console.createRechargeRequestInput.PaymentMethod != "bank_transfer" || console.createRechargeRequestInput.Contact != "ops@example.com" || console.createRechargeRequestInput.Note != "top up" {
+		t.Fatalf("input = %+v", console.createRechargeRequestInput)
+	}
+	if console.createRechargeRequestUser.ID != "usr_1" {
+		t.Fatalf("user id = %q, want usr_1", console.createRechargeRequestUser.ID)
+	}
+}
+
 func TestConsoleListAPIKeysMapsPermissionDenied(t *testing.T) {
 	t.Parallel()
 
@@ -360,21 +481,28 @@ func assertPanicMessage(t *testing.T, want string, fn func()) {
 }
 
 type fakeConsoleService struct {
-	overviewResult         ConsoleOverviewResponse
-	overviewErr            error
-	overviewUser           CurrentUser
-	currentWorkspaceResult CurrentWorkspaceResponse
-	currentWorkspaceErr    error
-	listAPIKeysResult      ListAPIKeysResponse
-	listAPIKeysErr         error
-	createAPIKeyInput      CreateAPIKeyRequest
-	createAPIKeyUser       CurrentUser
-	createAPIKeyResult     CreateAPIKeyResponse
-	createAPIKeyErr        error
-	stateAPIKeyID          string
-	stateStatus            domain.APIKeyStatus
-	stateResult            APIKeyResponse
-	stateErr               error
+	overviewResult              ConsoleOverviewResponse
+	overviewErr                 error
+	overviewUser                CurrentUser
+	currentWorkspaceResult      CurrentWorkspaceResponse
+	currentWorkspaceErr         error
+	billingOverviewResult       BillingOverviewResponse
+	billingOverviewErr          error
+	billingOverviewUser         CurrentUser
+	createRechargeRequestInput  CreateRechargeRequestRequest
+	createRechargeRequestUser   CurrentUser
+	createRechargeRequestResult CreateRechargeRequestResponse
+	createRechargeRequestErr    error
+	listAPIKeysResult           ListAPIKeysResponse
+	listAPIKeysErr              error
+	createAPIKeyInput           CreateAPIKeyRequest
+	createAPIKeyUser            CurrentUser
+	createAPIKeyResult          CreateAPIKeyResponse
+	createAPIKeyErr             error
+	stateAPIKeyID               string
+	stateStatus                 domain.APIKeyStatus
+	stateResult                 APIKeyResponse
+	stateErr                    error
 }
 
 func (f *fakeConsoleService) Overview(_ context.Context, user CurrentUser) (ConsoleOverviewResponse, error) {
@@ -384,6 +512,17 @@ func (f *fakeConsoleService) Overview(_ context.Context, user CurrentUser) (Cons
 
 func (f *fakeConsoleService) CurrentWorkspace(_ context.Context, _ CurrentUser) (CurrentWorkspaceResponse, error) {
 	return f.currentWorkspaceResult, f.currentWorkspaceErr
+}
+
+func (f *fakeConsoleService) BillingOverview(_ context.Context, user CurrentUser) (BillingOverviewResponse, error) {
+	f.billingOverviewUser = user
+	return f.billingOverviewResult, f.billingOverviewErr
+}
+
+func (f *fakeConsoleService) CreateRechargeRequest(_ context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error) {
+	f.createRechargeRequestUser = user
+	f.createRechargeRequestInput = input
+	return f.createRechargeRequestResult, f.createRechargeRequestErr
 }
 
 func (f *fakeConsoleService) ListAPIKeys(_ context.Context, _ CurrentUser) (ListAPIKeysResponse, error) {

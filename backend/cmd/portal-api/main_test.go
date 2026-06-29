@@ -31,7 +31,7 @@ func TestRegisterDatabaseBackedRoutesDisablesAuthPublicAndConsoleRoutesWithoutDS
 	}
 	cleanup()
 
-	for _, path := range []string{"/api/auth/email/start", "/api/public/models", "/api/workspaces/current", "/api/console/overview", "/api/api-keys"} {
+	for _, path := range []string{"/api/auth/email/start", "/api/public/models", "/api/workspaces/current", "/api/console/overview", "/api/api-keys", "/api/billing/overview"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -68,6 +68,11 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 			AmountMicroCNY: 10_000_000,
 			TTLDays:        7,
 		},
+		GitHubOAuth: config.GitHubOAuthConfig{
+			ClientID:     "github-client",
+			ClientSecret: "github-secret",
+			RedirectURL:  "https://portal.example.com/api/auth/github/callback",
+		},
 	}, logger)
 	if err != nil {
 		t.Fatalf("register database backed routes: %v", err)
@@ -83,6 +88,7 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 		{method: http.MethodGet, path: "/api/console/overview"},
 		{method: http.MethodGet, path: "/api/workspaces/current"},
 		{method: http.MethodGet, path: "/api/api-keys"},
+		{method: http.MethodGet, path: "/api/billing/overview"},
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(tt.method, tt.path, nil)
@@ -105,6 +111,9 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 	}
 	if capturedPortalConsoleTrialCredit.TTLDays != 7 {
 		t.Fatalf("console trial ttl = %d, want 7", capturedPortalConsoleTrialCredit.TTLDays)
+	}
+	if capturedPortalGitHubOAuth.ClientID != "github-client" || capturedPortalGitHubOAuth.ClientSecret != "github-secret" || capturedPortalGitHubOAuth.RedirectURL != "https://portal.example.com/api/auth/github/callback" {
+		t.Fatalf("github oauth = %+v", capturedPortalGitHubOAuth)
 	}
 }
 
@@ -142,7 +151,7 @@ func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *
 		t.Fatalf("database cleanup was not called")
 	}
 
-	for _, path := range []string{"/api/public/models", "/api/auth/email/start", "/api/workspaces/current", "/api/console/overview", "/api/api-keys"} {
+	for _, path := range []string{"/api/public/models", "/api/auth/email/start", "/api/workspaces/current", "/api/console/overview", "/api/api-keys", "/api/billing/overview"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
@@ -172,8 +181,9 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	}
 	capturedPortalAuthTrialCredit = config.TrialCreditConfig{}
 	capturedPortalConsoleTrialCredit = config.TrialCreditConfig{}
-	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig, _ config.GoogleOAuthConfig) (api.AuthService, error) {
+	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig, _ config.GoogleOAuthConfig, githubOAuth config.GitHubOAuthConfig) (api.AuthService, error) {
 		capturedPortalAuthTrialCredit = trialCredit
+		capturedPortalGitHubOAuth = githubOAuth
 		return fakePortalAuthService{}, nil
 	}
 	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig) (api.ConsoleService, error) {
@@ -202,6 +212,9 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		mux.HandleFunc("GET /api/api-keys", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
+		mux.HandleFunc("GET /api/billing/overview", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
 	}
 
 	return func() {
@@ -218,6 +231,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 
 var capturedPortalAuthTrialCredit config.TrialCreditConfig
 var capturedPortalConsoleTrialCredit config.TrialCreditConfig
+var capturedPortalGitHubOAuth config.GitHubOAuthConfig
 
 type fakePortalAuthService struct{}
 
@@ -237,14 +251,21 @@ func (fakePortalAuthService) Logout(context.Context, string) error {
 	return nil
 }
 
-func (fakePortalAuthService) GetGoogleAuthURL(string) string                       { return "" }
+func (fakePortalAuthService) GetGoogleAuthURL(string) string { return "" }
+func (fakePortalAuthService) GetGitHubAuthURL(string) string { return "" }
 func (fakePortalAuthService) HandleGoogleCallback(context.Context, string, string, string) (api.OAuthLoginResult, error) {
+	return api.OAuthLoginResult{}, nil
+}
+func (fakePortalAuthService) HandleGitHubCallback(context.Context, string, string, string) (api.OAuthLoginResult, error) {
 	return api.OAuthLoginResult{}, nil
 }
 func (fakePortalAuthService) AcceptTerms(context.Context, string) (api.AcceptTermsResult, error) {
 	return api.AcceptTermsResult{}, nil
 }
 func (fakePortalAuthService) HandleGoogleBind(context.Context, string, string) (api.AccountIdentityDTO, error) {
+	return api.AccountIdentityDTO{}, nil
+}
+func (fakePortalAuthService) HandleGitHubBind(context.Context, string, string) (api.AccountIdentityDTO, error) {
 	return api.AccountIdentityDTO{}, nil
 }
 func (fakePortalAuthService) ListAccountIdentities(context.Context, string) ([]api.AccountIdentityDTO, error) {
@@ -259,6 +280,14 @@ func (fakePortalConsoleService) Overview(context.Context, api.CurrentUser) (api.
 
 func (fakePortalConsoleService) CurrentWorkspace(context.Context, api.CurrentUser) (api.CurrentWorkspaceResponse, error) {
 	return api.CurrentWorkspaceResponse{}, nil
+}
+
+func (fakePortalConsoleService) BillingOverview(context.Context, api.CurrentUser) (api.BillingOverviewResponse, error) {
+	return api.BillingOverviewResponse{}, nil
+}
+
+func (fakePortalConsoleService) CreateRechargeRequest(context.Context, api.CurrentUser, api.CreateRechargeRequestRequest) (api.CreateRechargeRequestResponse, error) {
+	return api.CreateRechargeRequestResponse{}, nil
 }
 
 func (fakePortalConsoleService) ListAPIKeys(context.Context, api.CurrentUser) (api.ListAPIKeysResponse, error) {

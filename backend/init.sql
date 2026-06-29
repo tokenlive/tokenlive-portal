@@ -227,6 +227,32 @@ CREATE TABLE ledger_entries (
     CONSTRAINT fk_ledger_entries_api_key FOREIGN KEY (api_key_id) REFERENCES api_keys(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='账务流水表';
 
+CREATE TABLE recharge_requests (
+    id VARCHAR(32) PRIMARY KEY COMMENT '充值申请ID',
+    workspace_id VARCHAR(32) NOT NULL COMMENT '工作空间ID',
+    requested_by_user_id VARCHAR(32) NOT NULL COMMENT '申请人用户ID',
+    amount_micro_cny BIGINT NOT NULL COMMENT '申请充值金额',
+    currency VARCHAR(8) NOT NULL COMMENT '货币',
+    status VARCHAR(32) NOT NULL COMMENT '申请状态',
+    payment_method VARCHAR(64) NOT NULL DEFAULT '' COMMENT '付款方式',
+    contact VARCHAR(320) NOT NULL DEFAULT '' COMMENT '联系信息',
+    note TEXT NULL COMMENT '申请备注',
+    admin_note TEXT NULL COMMENT '审核备注',
+    ledger_entry_id VARCHAR(32) NULL COMMENT '入账流水ID',
+    reviewed_by_user_id VARCHAR(32) NULL COMMENT '审核人用户ID',
+    reviewed_at DATETIME(3) NULL COMMENT '审核时间',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    CONSTRAINT chk_recharge_requests_amount_positive CHECK (amount_micro_cny > 0),
+    KEY idx_recharge_requests_workspace_created (workspace_id, created_at),
+    KEY idx_recharge_requests_requested_by_user_id (requested_by_user_id),
+    KEY idx_recharge_requests_status (status),
+    CONSTRAINT fk_recharge_requests_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+    CONSTRAINT fk_recharge_requests_requested_by FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+    CONSTRAINT fk_recharge_requests_ledger_entry FOREIGN KEY (ledger_entry_id) REFERENCES ledger_entries(id),
+    CONSTRAINT fk_recharge_requests_reviewed_by FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='充值申请表';
+
 CREATE TABLE audit_logs (
     id VARCHAR(32) PRIMARY KEY COMMENT '审计日志ID',
     workspace_id VARCHAR(32) NULL COMMENT '工作空间ID',

@@ -20,7 +20,7 @@ tokenlive-portal/
 ## 功能特性
 
 ### 用户端
-- 用户注册和登录 (邮件验证码 / Google OAuth)
+- 用户注册和登录 (邮件验证码 / Google OAuth / GitHub OAuth)
 - 模型浏览和搜索
 - 模型详情查看
 - 仪表板概览

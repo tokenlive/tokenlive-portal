@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { CircleGauge, CreditCard, KeyRound, Power, Settings } from "lucide-react";
 import { getMe, logout } from "@/lib/api";
 import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 
 const NAV_ITEMS = [
-  { href: "/console/dashboard", label: "Overview", icon: "◉" },
-  { href: "/console/api-keys", label: "API Keys", icon: "⚷" },
-  { href: "/console/settings", label: "Settings", icon: "⚙" },
+  { href: "/console/dashboard", label: "Overview", icon: CircleGauge },
+  { href: "/console/api-keys", label: "API Keys", icon: KeyRound },
+  { href: "/console/billing", label: "Billing", icon: CreditCard },
+  { href: "/console/settings", label: "Settings", icon: Settings },
 ];
 
 export default function ConsoleLayout({
@@ -84,6 +86,7 @@ export default function ConsoleLayout({
         <nav className="flex-1 space-y-1 px-3 py-4">
           {NAV_ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
@@ -94,7 +97,7 @@ export default function ConsoleLayout({
                     : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                 }`}
               >
-                <span className="text-base leading-none">{item.icon}</span>
+                <Icon className="h-4 w-4" aria-hidden="true" />
                 {item.label}
                 {active && <span className="tl-node tl-node--sm ml-auto" />}
               </Link>
@@ -108,7 +111,7 @@ export default function ConsoleLayout({
             onClick={handleSignOut}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary/60"
           >
-            <span className="text-sm">⏻</span>
+            <Power className="h-4 w-4" aria-hidden="true" />
             Sign out
           </button>
         </div>

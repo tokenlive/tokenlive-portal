@@ -36,6 +36,71 @@ type CreateLedgerInput struct {
 	Metadata                 datatypes.JSON
 }
 
+type CreateRechargeRequestInput struct {
+	WorkspaceID       string
+	RequestedByUserID string
+	AmountMicroCNY    int64
+	PaymentMethod     string
+	Contact           string
+	Note              string
+}
+
+func (r *Repositories) CreateRechargeRequest(ctx context.Context, input CreateRechargeRequestInput) (domain.RechargeRequest, error) {
+	now := time.Now().UTC()
+	id, err := newID("rch_")
+	if err != nil {
+		return domain.RechargeRequest{}, err
+	}
+
+	request := domain.RechargeRequest{
+		ID:                id,
+		WorkspaceID:       input.WorkspaceID,
+		RequestedByUserID: input.RequestedByUserID,
+		AmountMicroCNY:    input.AmountMicroCNY,
+		Currency:          "CNY",
+		Status:            domain.RechargeRequestStatusPending,
+		PaymentMethod:     input.PaymentMethod,
+		Contact:           input.Contact,
+		Note:              input.Note,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := r.db.WithContext(ctx).Create(&request).Error; err != nil {
+		return domain.RechargeRequest{}, fmt.Errorf("create recharge request: %w", err)
+	}
+	return request, nil
+}
+
+func (r *Repositories) ListRechargeRequestsByWorkspace(ctx context.Context, workspaceID string, limit int) ([]domain.RechargeRequest, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var requests []domain.RechargeRequest
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&requests).Error; err != nil {
+		return nil, fmt.Errorf("list recharge requests: %w", err)
+	}
+	return requests, nil
+}
+
+func (r *Repositories) ListLedgerEntriesByWorkspace(ctx context.Context, workspaceID string, limit int) ([]domain.LedgerEntry, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var entries []domain.LedgerEntry
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&entries).Error; err != nil {
+		return nil, fmt.Errorf("list ledger entries: %w", err)
+	}
+	return entries, nil
+}
+
 func (r *Repositories) CreateLedgerEntry(ctx context.Context, input CreateLedgerInput) (domain.LedgerEntry, error) {
 	var output domain.LedgerEntry
 	now := time.Now().UTC()

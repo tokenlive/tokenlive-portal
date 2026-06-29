@@ -33,10 +33,14 @@ func RegisterOAuthRoutes(mux *http.ServeMux, service AuthService, env string) {
 	// 登录流程
 	mux.HandleFunc("GET /api/auth/google/login", handler.StartGoogleLogin)
 	mux.HandleFunc("GET /api/auth/google/callback", handler.GoogleCallback)
+	mux.HandleFunc("GET /api/auth/github/login", handler.StartGitHubLogin)
+	mux.HandleFunc("GET /api/auth/github/callback", handler.GitHubCallback)
 
 	// 绑定流程（已登录用户）
 	mux.HandleFunc("GET /api/auth/google/bind", handler.StartGoogleBind)
 	mux.HandleFunc("GET /api/auth/google/bind/callback", handler.GoogleBindCallback)
+	mux.HandleFunc("GET /api/auth/github/bind", handler.StartGitHubBind)
+	mux.HandleFunc("GET /api/auth/github/bind/callback", handler.GitHubBindCallback)
 
 	// Terms 接受
 	mux.HandleFunc("POST /api/auth/accept-terms", handler.AcceptTerms)
@@ -53,7 +57,7 @@ func (h OAuthHandler) StartGoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setOAuthStateCookie(w, state, false)
+	h.setOAuthStateCookie(w, state, false, "/api/auth/google/")
 	authURL := h.service.GetGoogleAuthURL(state)
 	if authURL == "" {
 		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
@@ -82,8 +86,52 @@ func (h OAuthHandler) StartGoogleBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setOAuthStateCookie(w, state, true)
+	h.setOAuthStateCookie(w, state, true, "/api/auth/google/")
 	authURL := h.service.GetGoogleAuthURL(state)
+	if authURL == "" {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		return
+	}
+
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (h OAuthHandler) StartGitHubLogin(w http.ResponseWriter, r *http.Request) {
+	state, err := generateOAuthState()
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		return
+	}
+
+	h.setOAuthStateCookie(w, state, false, "/api/auth/github/")
+	authURL := h.service.GetGitHubAuthURL(state)
+	if authURL == "" {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		return
+	}
+
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (h OAuthHandler) StartGitHubBind(w http.ResponseWriter, r *http.Request) {
+	sessionToken, err := sessionTokenFromRequest(r)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapAuthError(err))
+		return
+	}
+	if _, err := h.service.CurrentUser(r.Context(), sessionToken); err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapAuthError(err))
+		return
+	}
+
+	state, err := generateOAuthState()
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		return
+	}
+
+	h.setOAuthStateCookie(w, state, true, "/api/auth/github/")
+	authURL := h.service.GetGitHubAuthURL(state)
 	if authURL == "" {
 		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
 		return
@@ -105,7 +153,7 @@ func (h OAuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// 2. 校验 state cookie
 	cookieState, isBind := h.getOAuthStateCookie(r)
-	h.clearOAuthStateCookie(w)
+	h.clearOAuthStateCookie(w, "/api/auth/google/")
 	if cookieState == "" || queryState == "" || cookieState != queryState {
 		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthStateInvalid)
 		return
@@ -136,6 +184,42 @@ func (h OAuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h OAuthHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
+	queryState := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
+		writeOAuthCallbackHTML(w, false, "authorization_denied", "")
+		return
+	}
+
+	cookieState, isBind := h.getOAuthStateCookie(r)
+	h.clearOAuthStateCookie(w, "/api/auth/github/")
+	if cookieState == "" || queryState == "" || cookieState != queryState {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthStateInvalid)
+		return
+	}
+	if isBind {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthStateInvalid)
+		return
+	}
+
+	ip := clientIP(r)
+	userAgent := r.UserAgent()
+	result, err := h.service.HandleGitHubCallback(r.Context(), code, ip, userAgent)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapOAuthError(err))
+		return
+	}
+
+	setSessionCookie(w, result.SessionToken, h.cookieSecure(), h.cookieTTL)
+
+	if result.TermsPending {
+		writeOAuthCallbackHTML(w, true, "terms_pending", "")
+	} else {
+		writeOAuthCallbackHTML(w, true, "success", "")
+	}
+}
+
 // GoogleBindCallback 处理已登录用户绑定 Google 的回调
 func (h OAuthHandler) GoogleBindCallback(w http.ResponseWriter, r *http.Request) {
 	sessionToken, err := sessionTokenFromRequest(r)
@@ -152,13 +236,43 @@ func (h OAuthHandler) GoogleBindCallback(w http.ResponseWriter, r *http.Request)
 	}
 
 	cookieState, isBind := h.getOAuthStateCookie(r)
-	h.clearOAuthStateCookie(w)
+	h.clearOAuthStateCookie(w, "/api/auth/google/")
 	if cookieState == "" || queryState == "" || cookieState != queryState || !isBind {
 		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthStateInvalid)
 		return
 	}
 
 	identity, err := h.service.HandleGoogleBind(r.Context(), sessionToken, code)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapOAuthError(err))
+		return
+	}
+
+	writeOAuthCallbackHTML(w, true, "bind_success", identity.Provider)
+}
+
+func (h OAuthHandler) GitHubBindCallback(w http.ResponseWriter, r *http.Request) {
+	sessionToken, err := sessionTokenFromRequest(r)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapAuthError(err))
+		return
+	}
+
+	queryState := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
+		writeOAuthCallbackHTML(w, false, "authorization_denied", "")
+		return
+	}
+
+	cookieState, isBind := h.getOAuthStateCookie(r)
+	h.clearOAuthStateCookie(w, "/api/auth/github/")
+	if cookieState == "" || queryState == "" || cookieState != queryState || !isBind {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthStateInvalid)
+		return
+	}
+
+	identity, err := h.service.HandleGitHubBind(r.Context(), sessionToken, code)
 	if err != nil {
 		WriteError(w, RequestIDFromContext(r.Context()), mapOAuthError(err))
 		return
@@ -210,11 +324,11 @@ func (h OAuthHandler) cookieSecure() bool {
 }
 
 // setOAuthStateCookie 设置 OAuth state cookie，bind=true 表示绑定流程
-func (h OAuthHandler) setOAuthStateCookie(w http.ResponseWriter, state string, isBind bool) {
+func (h OAuthHandler) setOAuthStateCookie(w http.ResponseWriter, state string, isBind bool, path string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthStateCookieName,
 		Value:    state,
-		Path:     "/api/auth/google/",
+		Path:     path,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   h.cookieSecure(),
@@ -224,7 +338,7 @@ func (h OAuthHandler) setOAuthStateCookie(w http.ResponseWriter, state string, i
 		http.SetCookie(w, &http.Cookie{
 			Name:     oauthBindCookieName,
 			Value:    "1",
-			Path:     "/api/auth/google/",
+			Path:     path,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			Secure:   h.cookieSecure(),
@@ -245,12 +359,12 @@ func (h OAuthHandler) getOAuthStateCookie(r *http.Request) (state string, isBind
 	return state, isBind
 }
 
-func (h OAuthHandler) clearOAuthStateCookie(w http.ResponseWriter) {
+func (h OAuthHandler) clearOAuthStateCookie(w http.ResponseWriter, path string) {
 	clear := func(name string) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",
-			Path:     "/api/auth/google/",
+			Path:     path,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			Secure:   h.cookieSecure(),

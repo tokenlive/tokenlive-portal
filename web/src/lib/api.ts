@@ -6,9 +6,12 @@ import type {
   VerifyEmailLoginResponse,
   AcceptTermsResult,
   ConsoleOverviewResponse,
+  BillingOverviewResponse,
   ListAPIKeysResponse,
   CreateAPIKeyResponse,
   CreateAPIKeyRequest,
+  CreateRechargeRequestRequest,
+  CreateRechargeRequestResponse,
   APIKeyResponse,
   AccountIdentityDTO,
 } from "@/types/api";
@@ -101,6 +104,19 @@ export async function listOAuthAccounts(): Promise<AccountIdentityDTO[]> {
 
 export async function fetchOverview(): Promise<ConsoleOverviewResponse> {
   return request<ConsoleOverviewResponse>("/api/console/overview");
+}
+
+export async function fetchBillingOverview(): Promise<BillingOverviewResponse> {
+  return request<BillingOverviewResponse>("/api/billing/overview");
+}
+
+export async function createRechargeRequest(
+  data: CreateRechargeRequestRequest
+): Promise<CreateRechargeRequestResponse> {
+  return request<CreateRechargeRequestResponse>("/api/billing/recharge-requests", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 export async function listAPIKeys(): Promise<ListAPIKeysResponse> {

@@ -136,3 +136,30 @@ func TestLoadTrialCreditRejectsNonIntegerTTL(t *testing.T) {
 		t.Fatalf("Load() err = %v, want trial ttl error", err)
 	}
 }
+
+func TestLoadOAuthConfigs(t *testing.T) {
+	t.Setenv("PORTAL_GOOGLE_CLIENT_ID", " google-client ")
+	t.Setenv("PORTAL_GOOGLE_CLIENT_SECRET", " google-secret ")
+	t.Setenv("PORTAL_GOOGLE_REDIRECT_URL", " https://portal.example.com/google ")
+	t.Setenv("PORTAL_GITHUB_CLIENT_ID", " github-client ")
+	t.Setenv("PORTAL_GITHUB_CLIENT_SECRET", " github-secret ")
+	t.Setenv("PORTAL_GITHUB_REDIRECT_URL", " https://portal.example.com/github ")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	if !got.GoogleOAuth.Enabled() {
+		t.Fatalf("GoogleOAuth should be enabled")
+	}
+	if got.GoogleOAuth.ClientID != "google-client" || got.GoogleOAuth.ClientSecret != "google-secret" || got.GoogleOAuth.RedirectURL != "https://portal.example.com/google" {
+		t.Fatalf("GoogleOAuth = %+v", got.GoogleOAuth)
+	}
+	if !got.GitHubOAuth.Enabled() {
+		t.Fatalf("GitHubOAuth should be enabled")
+	}
+	if got.GitHubOAuth.ClientID != "github-client" || got.GitHubOAuth.ClientSecret != "github-secret" || got.GitHubOAuth.RedirectURL != "https://portal.example.com/github" {
+		t.Fatalf("GitHubOAuth = %+v", got.GitHubOAuth)
+	}
+}

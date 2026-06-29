@@ -25,6 +25,8 @@ func RegisterConsoleRoutes(mux *http.ServeMux, service ConsoleService, auth Auth
 	handler := ConsoleHandler{service: service, auth: auth}
 	mux.HandleFunc("GET /api/console/overview", handler.Overview)
 	mux.HandleFunc("GET /api/workspaces/current", handler.CurrentWorkspace)
+	mux.HandleFunc("GET /api/billing/overview", handler.BillingOverview)
+	mux.HandleFunc("POST /api/billing/recharge-requests", handler.CreateRechargeRequest)
 	mux.HandleFunc("GET /api/api-keys", handler.ListAPIKeys)
 	mux.HandleFunc("POST /api/api-keys", handler.CreateAPIKey)
 	mux.HandleFunc("POST /api/api-keys/{id}/enable", handler.EnableAPIKey)
@@ -62,6 +64,42 @@ func (h ConsoleHandler) CurrentWorkspace(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (h ConsoleHandler) BillingOverview(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := h.service.BillingOverview(r.Context(), user)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h ConsoleHandler) CreateRechargeRequest(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	var req CreateRechargeRequestRequest
+	if err := decodeStrictJSON(r, &req); err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), ErrInvalidRequest)
+		return
+	}
+
+	result, err := h.service.CreateRechargeRequest(r.Context(), user, req)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h ConsoleHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.currentUser(w, r)
 	if !ok {
@@ -84,7 +122,7 @@ func (h ConsoleHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateAPIKeyRequest
-	if err := decodeCreateAPIKeyRequest(r, &req); err != nil {
+	if err := decodeStrictJSON(r, &req); err != nil {
 		WriteError(w, RequestIDFromContext(r.Context()), ErrInvalidRequest)
 		return
 	}
@@ -98,7 +136,7 @@ func (h ConsoleHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func decodeCreateAPIKeyRequest(r *http.Request, req *CreateAPIKeyRequest) error {
+func decodeStrictJSON(r *http.Request, req any) error {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(req); err != nil {

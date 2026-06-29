@@ -13,7 +13,14 @@ import (
 	"github.com/tokenlive/tokenlive-portal/backend/internal/repository"
 )
 
-const maxAPIKeyNameLength = 160
+const (
+	maxAPIKeyNameLength      = 160
+	maxRechargePaymentLength = 64
+	maxRechargeContactLength = 320
+	maxRechargeNoteLength    = 2000
+	rechargeRequestListLimit = 20
+	ledgerEntryListLimit     = 20
+)
 
 var (
 	ErrConsoleWorkspaceNotFound       = errors.New("console workspace not found")
@@ -23,11 +30,15 @@ var (
 	ErrConsoleAPIKeyInvalidName       = errors.New("console api key invalid name")
 	ErrConsoleAPIKeyInvalidLimit      = errors.New("console api key invalid limit")
 	ErrConsoleAPIKeyInvalidExpiration = errors.New("console api key invalid expiration")
+	ErrConsoleRechargeInvalidAmount   = errors.New("console recharge invalid amount")
+	ErrConsoleRechargeInvalidRequest  = errors.New("console recharge invalid request")
 )
 
 type ConsoleService interface {
 	Overview(ctx context.Context, user CurrentUser) (ConsoleOverviewResponse, error)
 	CurrentWorkspace(ctx context.Context, user CurrentUser) (CurrentWorkspaceResponse, error)
+	BillingOverview(ctx context.Context, user CurrentUser) (BillingOverviewResponse, error)
+	CreateRechargeRequest(ctx context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error)
 	ListAPIKeys(ctx context.Context, user CurrentUser) (ListAPIKeysResponse, error)
 	CreateAPIKey(ctx context.Context, user CurrentUser, input CreateAPIKeyRequest) (CreateAPIKeyResponse, error)
 	EnableAPIKey(ctx context.Context, user CurrentUser, apiKeyID string) (APIKeyResponse, error)
@@ -87,6 +98,43 @@ type WorkspaceResponse struct {
 	Balance        WorkspaceBalanceResponse `json:"balance"`
 }
 
+type BillingOverviewResponse struct {
+	Workspace        WorkspaceResponse         `json:"workspace"`
+	RechargeRequests []RechargeRequestResponse `json:"recharge_requests"`
+	LedgerEntries    []LedgerEntryResponse     `json:"ledger_entries"`
+}
+
+type LedgerEntryResponse struct {
+	ID                       string                 `json:"id"`
+	Type                     domain.LedgerType      `json:"type"`
+	Direction                domain.LedgerDirection `json:"direction"`
+	AmountMicroCNY           int64                  `json:"amount_micro_cny"`
+	AmountCNY                string                 `json:"amount_cny"`
+	BalanceAfterMicroCNY     int64                  `json:"balance_after_micro_cny"`
+	BalanceAfterCNY          string                 `json:"balance_after_cny"`
+	Currency                 string                 `json:"currency"`
+	APIKeyID                 *string                `json:"api_key_id,omitempty"`
+	APIKeyNameSnapshot       string                 `json:"api_key_name_snapshot"`
+	ModelID                  string                 `json:"model_id"`
+	ModelDisplayNameSnapshot string                 `json:"model_display_name_snapshot"`
+	CreatedAt                time.Time              `json:"created_at"`
+}
+
+type RechargeRequestResponse struct {
+	ID                string                       `json:"id"`
+	RequestedByUserID string                       `json:"requested_by_user_id"`
+	AmountMicroCNY    int64                        `json:"amount_micro_cny"`
+	AmountCNY         string                       `json:"amount_cny"`
+	Currency          string                       `json:"currency"`
+	Status            domain.RechargeRequestStatus `json:"status"`
+	PaymentMethod     string                       `json:"payment_method"`
+	Contact           string                       `json:"contact"`
+	Note              string                       `json:"note"`
+	AdminNote         string                       `json:"admin_note"`
+	CreatedAt         time.Time                    `json:"created_at"`
+	UpdatedAt         time.Time                    `json:"updated_at"`
+}
+
 type APIKeyResponse struct {
 	ID                   string              `json:"id"`
 	Name                 string              `json:"name"`
@@ -121,11 +169,25 @@ type CreateAPIKeyResponse struct {
 	Secret string         `json:"secret"`
 }
 
+type CreateRechargeRequestRequest struct {
+	AmountMicroCNY int64  `json:"amount_micro_cny"`
+	PaymentMethod  string `json:"payment_method"`
+	Contact        string `json:"contact"`
+	Note           string `json:"note"`
+}
+
+type CreateRechargeRequestResponse struct {
+	RechargeRequest RechargeRequestResponse `json:"recharge_request"`
+}
+
 type consoleStore interface {
 	ResolveCurrentWorkspace(ctx context.Context, userID string) (repository.CurrentWorkspaceResult, error)
 	ListAPIKeysByWorkspace(ctx context.Context, workspaceID string) ([]domain.APIKey, error)
 	CreateAPIKeyWithAudit(ctx context.Context, input repository.CreateAPIKeyWithAuditInput) (repository.CreateAPIKeyResult, error)
 	UpdateAPIKeyStatusWithAudit(ctx context.Context, input repository.UpdateAPIKeyStatusWithAuditInput) (domain.APIKey, error)
+	ListRechargeRequestsByWorkspace(ctx context.Context, workspaceID string, limit int) ([]domain.RechargeRequest, error)
+	ListLedgerEntriesByWorkspace(ctx context.Context, workspaceID string, limit int) ([]domain.LedgerEntry, error)
+	CreateRechargeRequest(ctx context.Context, input repository.CreateRechargeRequestInput) (domain.RechargeRequest, error)
 }
 
 type consoleService struct {
@@ -201,6 +263,53 @@ func (s *consoleService) CurrentWorkspace(ctx context.Context, user CurrentUser)
 		return CurrentWorkspaceResponse{}, err
 	}
 	return CurrentWorkspaceResponse{Workspace: workspaceResponseFromRepository(current)}, nil
+}
+
+func (s *consoleService) BillingOverview(ctx context.Context, user CurrentUser) (BillingOverviewResponse, error) {
+	current, err := s.resolveBillingWorkspace(ctx, user)
+	if err != nil {
+		return BillingOverviewResponse{}, err
+	}
+	requests, err := s.store.ListRechargeRequestsByWorkspace(ctx, current.Workspace.ID, rechargeRequestListLimit)
+	if err != nil {
+		return BillingOverviewResponse{}, mapConsoleRepositoryError(err)
+	}
+	entries, err := s.store.ListLedgerEntriesByWorkspace(ctx, current.Workspace.ID, ledgerEntryListLimit)
+	if err != nil {
+		return BillingOverviewResponse{}, mapConsoleRepositoryError(err)
+	}
+
+	resp := BillingOverviewResponse{
+		Workspace:        workspaceResponseFromRepository(current),
+		RechargeRequests: make([]RechargeRequestResponse, 0, len(requests)),
+		LedgerEntries:    make([]LedgerEntryResponse, 0, len(entries)),
+	}
+	for _, request := range requests {
+		resp.RechargeRequests = append(resp.RechargeRequests, rechargeRequestResponseFromDomain(request))
+	}
+	for _, entry := range entries {
+		resp.LedgerEntries = append(resp.LedgerEntries, ledgerEntryResponseFromDomain(entry))
+	}
+	return resp, nil
+}
+
+func (s *consoleService) CreateRechargeRequest(ctx context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error) {
+	current, err := s.resolveBillingWorkspace(ctx, user)
+	if err != nil {
+		return CreateRechargeRequestResponse{}, err
+	}
+	createInput, err := s.validateCreateRechargeRequestInput(input)
+	if err != nil {
+		return CreateRechargeRequestResponse{}, err
+	}
+	createInput.WorkspaceID = current.Workspace.ID
+	createInput.RequestedByUserID = user.ID
+
+	request, err := s.store.CreateRechargeRequest(ctx, createInput)
+	if err != nil {
+		return CreateRechargeRequestResponse{}, mapConsoleRepositoryError(err)
+	}
+	return CreateRechargeRequestResponse{RechargeRequest: rechargeRequestResponseFromDomain(request)}, nil
 }
 
 func (s *consoleService) ListAPIKeys(ctx context.Context, user CurrentUser) (ListAPIKeysResponse, error) {
@@ -304,6 +413,17 @@ func (s *consoleService) resolveManageableWorkspace(ctx context.Context, user Cu
 	return current, nil
 }
 
+func (s *consoleService) resolveBillingWorkspace(ctx context.Context, user CurrentUser) (repository.CurrentWorkspaceResult, error) {
+	current, err := s.resolveWorkspace(ctx, user)
+	if err != nil {
+		return repository.CurrentWorkspaceResult{}, err
+	}
+	if !canManageBilling(current.Role) {
+		return repository.CurrentWorkspaceResult{}, ErrConsolePermissionDenied
+	}
+	return current, nil
+}
+
 func mapConsoleRepositoryError(err error) error {
 	switch {
 	case errors.Is(err, repository.ErrWorkspaceNotFound):
@@ -333,6 +453,10 @@ func mapConsoleError(err error) AppError {
 		return ErrAPIKeyInvalidLimit
 	case errors.Is(err, ErrConsoleAPIKeyInvalidExpiration):
 		return ErrAPIKeyInvalidExpiration
+	case errors.Is(err, ErrConsoleRechargeInvalidAmount):
+		return ErrInvalidRequest
+	case errors.Is(err, ErrConsoleRechargeInvalidRequest):
+		return ErrInvalidRequest
 	case errors.Is(err, ErrAuthUnauthorized):
 		return ErrUnauthorized
 	case errors.Is(err, ErrAuthTermsAlreadyAccepted):
@@ -396,6 +520,41 @@ func apiKeyResponseFromDomain(key domain.APIKey) APIKeyResponse {
 	}
 }
 
+func rechargeRequestResponseFromDomain(request domain.RechargeRequest) RechargeRequestResponse {
+	return RechargeRequestResponse{
+		ID:                request.ID,
+		RequestedByUserID: request.RequestedByUserID,
+		AmountMicroCNY:    request.AmountMicroCNY,
+		AmountCNY:         money.MicroCNY(request.AmountMicroCNY).FormatCNY(),
+		Currency:          request.Currency,
+		Status:            request.Status,
+		PaymentMethod:     request.PaymentMethod,
+		Contact:           request.Contact,
+		Note:              request.Note,
+		AdminNote:         request.AdminNote,
+		CreatedAt:         request.CreatedAt,
+		UpdatedAt:         request.UpdatedAt,
+	}
+}
+
+func ledgerEntryResponseFromDomain(entry domain.LedgerEntry) LedgerEntryResponse {
+	return LedgerEntryResponse{
+		ID:                       entry.ID,
+		Type:                     entry.Type,
+		Direction:                entry.Direction,
+		AmountMicroCNY:           entry.AmountMicroCNY,
+		AmountCNY:                money.MicroCNY(entry.AmountMicroCNY).FormatCNY(),
+		BalanceAfterMicroCNY:     entry.BalanceAfterMicroCNY,
+		BalanceAfterCNY:          money.MicroCNY(entry.BalanceAfterMicroCNY).FormatCNY(),
+		Currency:                 entry.Currency,
+		APIKeyID:                 entry.APIKeyID,
+		APIKeyNameSnapshot:       entry.APIKeyNameSnapshot,
+		ModelID:                  entry.ModelID,
+		ModelDisplayNameSnapshot: entry.ModelDisplayNameSnapshot,
+		CreatedAt:                entry.CreatedAt,
+	}
+}
+
 func moneyAmountFromPointer(value *int64) MoneyAmount {
 	if value == nil {
 		return MoneyAmount{}
@@ -409,6 +568,10 @@ func moneyAmountFromPointer(value *int64) MoneyAmount {
 
 func canManageAPIKeys(role domain.MemberRole) bool {
 	return role == domain.MemberRoleOwner || role == domain.MemberRoleDeveloper
+}
+
+func canManageBilling(role domain.MemberRole) bool {
+	return role == domain.MemberRoleOwner || role == domain.MemberRoleBilling
 }
 
 func (s *consoleService) validateCreateAPIKeyInput(input CreateAPIKeyRequest, now time.Time) (repository.CreateAPIKeyInput, error) {
@@ -431,5 +594,30 @@ func (s *consoleService) validateCreateAPIKeyInput(input CreateAPIKeyRequest, no
 		DailyLimitMicroCNY:   input.DailyLimitMicroCNY,
 		MonthlyLimitMicroCNY: input.MonthlyLimitMicroCNY,
 		ExpiresAt:            input.ExpiresAt,
+	}, nil
+}
+
+func (s *consoleService) validateCreateRechargeRequestInput(input CreateRechargeRequestRequest) (repository.CreateRechargeRequestInput, error) {
+	paymentMethod := strings.TrimSpace(input.PaymentMethod)
+	contact := strings.TrimSpace(input.Contact)
+	note := strings.TrimSpace(input.Note)
+	if input.AmountMicroCNY <= 0 {
+		return repository.CreateRechargeRequestInput{}, ErrConsoleRechargeInvalidAmount
+	}
+	if paymentMethod == "" || utf8.RuneCountInString(paymentMethod) > maxRechargePaymentLength {
+		return repository.CreateRechargeRequestInput{}, ErrConsoleRechargeInvalidRequest
+	}
+	if contact == "" || utf8.RuneCountInString(contact) > maxRechargeContactLength {
+		return repository.CreateRechargeRequestInput{}, ErrConsoleRechargeInvalidRequest
+	}
+	if utf8.RuneCountInString(note) > maxRechargeNoteLength {
+		return repository.CreateRechargeRequestInput{}, ErrConsoleRechargeInvalidRequest
+	}
+
+	return repository.CreateRechargeRequestInput{
+		AmountMicroCNY: input.AmountMicroCNY,
+		PaymentMethod:  paymentMethod,
+		Contact:        contact,
+		Note:           note,
 	}, nil
 }

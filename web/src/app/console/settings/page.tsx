@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getMe, listOAuthAccounts, GOOGLE_BIND_URL, logout } from "@/lib/api";
+import Image from "next/image";
+import { getMe, listOAuthAccounts, logout } from "@/lib/api";
+import { getOAuthProviderRows } from "@/lib/oauth-providers";
 import type { CurrentUser, AccountIdentityDTO } from "@/types/api";
 import { useRouter } from "next/navigation";
 
@@ -10,6 +12,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [accounts, setAccounts] = useState<AccountIdentityDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  const providerRows = getOAuthProviderRows(accounts);
 
   const load = useCallback(async () => {
     try {
@@ -67,10 +70,13 @@ export default function SettingsPage() {
         <div className="rounded-lg border border-border bg-card p-5">
           <div className="flex items-center gap-4">
             {user?.avatar_url ? (
-              <img
+              <Image
                 src={user.avatar_url}
                 alt={user.display_name}
+                width={48}
+                height={48}
                 className="h-12 w-12 rounded-full object-cover"
+                unoptimized
               />
             ) : (
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted font-heading text-lg font-semibold text-muted-foreground">
@@ -95,20 +101,20 @@ export default function SettingsPage() {
           Connected Accounts
         </h2>
         <div className="rounded-lg border border-border bg-card divide-y divide-border">
-          {accounts.length > 0 &&
-            accounts.map((acc) => (
+          {providerRows.map((row) =>
+            row.connected && row.account ? (
               <div
-                key={acc.provider}
+                key={row.id}
                 className="flex items-center justify-between p-4"
               >
                 <div className="flex items-center gap-3">
-                  <ProviderIcon provider={acc.provider} />
+                  <ProviderIcon provider={row.id} />
                   <div>
                     <p className="text-sm font-medium text-foreground capitalize">
-                      {acc.provider}
+                      {row.label}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {acc.display_name} · {acc.email}
+                      {row.account.display_name} · {row.account.email}
                     </p>
                   </div>
                 </div>
@@ -117,27 +123,37 @@ export default function SettingsPage() {
                   Connected
                 </span>
               </div>
-            ))}
-
-          {/* Always show Google bind option if not connected */}
-          {!accounts.some((a) => a.provider === "google") && (
-            <div className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                <ProviderIcon provider="google" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Google</p>
-                  <p className="text-xs text-muted-foreground">
-                    Not connected
-                  </p>
+            ) : (
+              <div key={row.id} className="flex items-center justify-between p-4">
+                <div className="flex items-center gap-3">
+                  <ProviderIcon provider={row.id} />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {row.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {row.disabled ? row.unavailableLabel : "Not connected"}
+                    </p>
+                  </div>
                 </div>
+                {row.enabled && row.bindHref ? (
+                  <a
+                    href={row.bindHref}
+                    className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-secondary tl-focus-ring"
+                  >
+                    Connect
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="cursor-not-allowed rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground opacity-70"
+                  >
+                    Unavailable
+                  </button>
+                )}
               </div>
-              <a
-                href={GOOGLE_BIND_URL}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-secondary"
-              >
-                Connect
-              </a>
-            </div>
+            )
           )}
         </div>
       </section>
@@ -161,6 +177,19 @@ export default function SettingsPage() {
 }
 
 function ProviderIcon({ provider }: { provider: string }) {
+  if (provider === "github") {
+    return (
+      <svg
+        className="h-5 w-5 text-foreground"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M12 2C6.48 2 2 6.59 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-1.05-.01-1.9-2.51.47-3.16-.63-3.36-1.21-.11-.3-.6-1.21-1.03-1.46-.35-.19-.85-.66-.01-.67.79-.01 1.35.74 1.54 1.05.9 1.55 2.34 1.11 2.91.85.09-.67.35-1.11.64-1.37-2.22-.26-4.55-1.14-4.55-5.05 0-1.11.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 6.98c.85 0 1.71.12 2.51.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.92-2.34 4.79-4.57 5.05.36.32.68.93.68 1.89 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.08 10.08 0 0 0 22 12.25C22 6.59 17.52 2 12 2Z" />
+      </svg>
+    );
+  }
+
   if (provider === "google") {
     return (
       <svg className="h-5 w-5" viewBox="0 0 24 24">

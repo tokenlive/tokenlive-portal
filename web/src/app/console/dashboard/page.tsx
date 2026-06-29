@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchOverview } from "@/lib/api";
+import { getActivationStepAction, getNextActivationAction } from "@/lib/activation-actions";
 import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 import type { ConsoleOverviewResponse } from "@/types/api";
 
@@ -47,6 +49,7 @@ export default function DashboardPage() {
 
   const ws = overview?.workspace;
   const activation = overview?.activation;
+  const nextAction = getNextActivationAction(activation?.steps);
 
   return (
     <div className="p-6 lg:p-8">
@@ -76,9 +79,24 @@ export default function DashboardPage() {
 
       {activation && (
         <section className="mb-8">
-          <h2 className="mb-4 font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            Getting Started
-          </h2>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Activation
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Move from signup to a real gateway request.
+              </p>
+            </div>
+            {nextAction && (
+              <Link
+                href={nextAction.href}
+                className="inline-flex w-fit rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 tl-focus-ring"
+              >
+                {nextAction.label}
+              </Link>
+            )}
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {activation.steps.map((step) => (
               <ActivationStepCard key={step.key} step={step} />
@@ -105,13 +123,14 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section>
+      <section id="quick-start" className="scroll-mt-6">
         <h2 className="mb-4 font-heading text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Quick Start
+          First Call
         </h2>
         <div className="rounded-lg border border-border bg-card p-5">
           <p className="mb-3 text-sm text-muted-foreground">
-            Create an API key, then use it to call any model:
+            Create an API key, then run this request against the existing
+            TokenLive gateway:
           </p>
           <pre className="overflow-x-auto rounded-md bg-background p-4 font-mono text-sm leading-relaxed text-foreground">
             <code>{`curl -X POST https://api.tokenlive.ai/v1/chat/completions \\
@@ -134,6 +153,7 @@ function ActivationStepCard({
   step: { key: string; label: string; status: string };
 }) {
   const completed = step.status === "completed";
+  const action = getActivationStepAction(step);
   return (
     <div
       className={`rounded-lg border p-4 transition-colors ${
@@ -145,6 +165,19 @@ function ActivationStepCard({
         <h3 className="font-heading text-sm font-medium text-foreground">
           {step.label}
         </h3>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          {completed ? "Completed" : "Next step"}
+        </p>
+        {action && (
+          <Link
+            href={action.href}
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary tl-focus-ring"
+          >
+            {action.label}
+          </Link>
+        )}
       </div>
     </div>
   );

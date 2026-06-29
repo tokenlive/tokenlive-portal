@@ -101,20 +101,21 @@ type authService struct {
 	authPepper           string
 	trialCredit          config.TrialCreditConfig
 	googleOAuth          config.GoogleOAuthConfig
+	githubOAuth          config.GitHubOAuthConfig
 	nowFunc              func() time.Time
 	generateEmailCode    func() (string, error)
 	generateSessionToken func() (string, error)
 	generateSlugSuffix   func() (string, error)
 }
 
-func NewAuthService(repos *repository.Repositories, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig) (AuthService, error) {
+func NewAuthService(repos *repository.Repositories, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig, githubOAuth config.GitHubOAuthConfig) (AuthService, error) {
 	if repos == nil {
 		return nil, errors.New("auth repositories are required")
 	}
-	return newAuthService(authServiceRepositoryStore{repos: repos}, env, authPepper, trialCredit, googleOAuth)
+	return newAuthService(authServiceRepositoryStore{repos: repos}, env, authPepper, trialCredit, googleOAuth, githubOAuth)
 }
 
-func newAuthService(store authServiceStore, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig) (*authService, error) {
+func newAuthService(store authServiceStore, env string, authPepper string, trialCredit config.TrialCreditConfig, googleOAuth config.GoogleOAuthConfig, githubOAuth config.GitHubOAuthConfig) (*authService, error) {
 	if store == nil {
 		return nil, errors.New("auth store is required")
 	}
@@ -134,6 +135,7 @@ func newAuthService(store authServiceStore, env string, authPepper string, trial
 		authPepper:           authPepper,
 		trialCredit:          trialCredit,
 		googleOAuth:          googleOAuth,
+		githubOAuth:          githubOAuth,
 		nowFunc:              func() time.Time { return time.Now().UTC() },
 		generateEmailCode:    security.GenerateEmailCode,
 		generateSessionToken: security.GenerateSessionToken,

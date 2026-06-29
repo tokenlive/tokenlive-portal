@@ -95,6 +95,20 @@ func TestCanManageAPIKeys(t *testing.T) {
 	}
 }
 
+func TestCanManageBilling(t *testing.T) {
+	t.Parallel()
+
+	if !canManageBilling(domain.MemberRoleOwner) {
+		t.Fatalf("owner should manage billing")
+	}
+	if !canManageBilling(domain.MemberRoleBilling) {
+		t.Fatalf("billing should manage billing")
+	}
+	if canManageBilling(domain.MemberRoleDeveloper) {
+		t.Fatalf("developer should not manage billing")
+	}
+}
+
 func TestMapConsoleError(t *testing.T) {
 	t.Parallel()
 
@@ -110,6 +124,8 @@ func TestMapConsoleError(t *testing.T) {
 		{name: "api key invalid name", err: ErrConsoleAPIKeyInvalidName, want: ErrAPIKeyInvalidName},
 		{name: "api key invalid limit", err: ErrConsoleAPIKeyInvalidLimit, want: ErrAPIKeyInvalidLimit},
 		{name: "api key invalid expiration", err: ErrConsoleAPIKeyInvalidExpiration, want: ErrAPIKeyInvalidExpiration},
+		{name: "recharge invalid amount", err: ErrConsoleRechargeInvalidAmount, want: ErrInvalidRequest},
+		{name: "recharge invalid request", err: ErrConsoleRechargeInvalidRequest, want: ErrInvalidRequest},
 		{name: "auth unauthorized", err: ErrAuthUnauthorized, want: ErrUnauthorized},
 		{name: "wrapped permission denied", err: errors.Join(errors.New("wrapper"), ErrConsolePermissionDenied), want: ErrPermissionDenied},
 		{name: "unknown", err: errors.New("boom"), want: ErrInternalError},
@@ -119,6 +135,33 @@ func TestMapConsoleError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := mapConsoleError(tt.err); got != tt.want {
 				t.Fatalf("mapConsoleError() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateCreateRechargeRequestInputRejectsBadValues(t *testing.T) {
+	t.Parallel()
+
+	service := &consoleService{}
+
+	tests := []struct {
+		name  string
+		input CreateRechargeRequestRequest
+		want  error
+	}{
+		{name: "zero amount", input: CreateRechargeRequestRequest{AmountMicroCNY: 0, PaymentMethod: "bank_transfer", Contact: "ops@example.com"}, want: ErrConsoleRechargeInvalidAmount},
+		{name: "negative amount", input: CreateRechargeRequestRequest{AmountMicroCNY: -1, PaymentMethod: "bank_transfer", Contact: "ops@example.com"}, want: ErrConsoleRechargeInvalidAmount},
+		{name: "blank payment", input: CreateRechargeRequestRequest{AmountMicroCNY: 1, Contact: "ops@example.com"}, want: ErrConsoleRechargeInvalidRequest},
+		{name: "blank contact", input: CreateRechargeRequestRequest{AmountMicroCNY: 1, PaymentMethod: "bank_transfer"}, want: ErrConsoleRechargeInvalidRequest},
+		{name: "long note", input: CreateRechargeRequestRequest{AmountMicroCNY: 1, PaymentMethod: "bank_transfer", Contact: "ops@example.com", Note: strings.Repeat("a", maxRechargeNoteLength+1)}, want: ErrConsoleRechargeInvalidRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.validateCreateRechargeRequestInput(tt.input)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 		})
 	}
@@ -224,6 +267,144 @@ func TestConsoleServiceBillingCannotListAPIKeys(t *testing.T) {
 	}
 	if store.listWorkspaceID != "" {
 		t.Fatalf("list workspace id = %q, want no repository list call", store.listWorkspaceID)
+	}
+}
+
+func TestConsoleServiceBillingOverviewListsRechargeRequests(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", Name: "Dev", Slug: "dev", Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleBilling,
+			Balance:   domain.WorkspaceBalance{AvailableMicroCNY: 10_000_000},
+		},
+		listRechargeRequestsResult: []domain.RechargeRequest{{
+			ID:                "rch_1",
+			WorkspaceID:       "wsp_1",
+			RequestedByUserID: "usr_1",
+			AmountMicroCNY:    20_000_000,
+			Currency:          "CNY",
+			Status:            domain.RechargeRequestStatusPending,
+			PaymentMethod:     "bank_transfer",
+			Contact:           "ops@example.com",
+			Note:              "invoice needed",
+			CreatedAt:         createdAt,
+			UpdatedAt:         createdAt,
+		}},
+		listLedgerEntriesResult: []domain.LedgerEntry{{
+			ID:                   "led_1",
+			WorkspaceID:          "wsp_1",
+			Type:                 domain.LedgerTypeTrialGrant,
+			Direction:            domain.LedgerDirectionCredit,
+			AmountMicroCNY:       10_000_000,
+			BalanceAfterMicroCNY: 10_000_000,
+			Currency:             "CNY",
+			IdempotencyKey:       "trial-grant:wsp_1",
+			CreatedAt:            createdAt,
+		}},
+	}
+	service, err := newConsoleService(store, "pepper", testTrialCreditConfig())
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	got, err := service.BillingOverview(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true})
+	if err != nil {
+		t.Fatalf("billing overview: %v", err)
+	}
+
+	if store.listRechargeWorkspaceID != "wsp_1" {
+		t.Fatalf("list recharge workspace id = %q, want wsp_1", store.listRechargeWorkspaceID)
+	}
+	if store.listLedgerWorkspaceID != "wsp_1" {
+		t.Fatalf("list ledger workspace id = %q, want wsp_1", store.listLedgerWorkspaceID)
+	}
+	if got.Workspace.Balance.AvailableCNY != "10.000000" {
+		t.Fatalf("available cny = %q, want 10.000000", got.Workspace.Balance.AvailableCNY)
+	}
+	if len(got.RechargeRequests) != 1 || got.RechargeRequests[0].ID != "rch_1" || got.RechargeRequests[0].AmountCNY != "20.000000" {
+		t.Fatalf("recharge requests = %+v", got.RechargeRequests)
+	}
+	if len(got.LedgerEntries) != 1 || got.LedgerEntries[0].ID != "led_1" || got.LedgerEntries[0].AmountCNY != "10.000000" || got.LedgerEntries[0].BalanceAfterCNY != "10.000000" {
+		t.Fatalf("ledger entries = %+v", got.LedgerEntries)
+	}
+}
+
+func TestConsoleServiceDeveloperCannotCreateRechargeRequest(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleDeveloper,
+		},
+	}
+	service, err := newConsoleService(store, "pepper", testTrialCreditConfig())
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	_, err = service.CreateRechargeRequest(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateRechargeRequestRequest{
+		AmountMicroCNY: 10_000_000,
+		PaymentMethod:  "bank_transfer",
+		Contact:        "ops@example.com",
+	})
+	if !errors.Is(err, ErrConsolePermissionDenied) {
+		t.Fatalf("err = %v, want ErrConsolePermissionDenied", err)
+	}
+	if store.createRechargeRequestInput.WorkspaceID != "" {
+		t.Fatalf("create recharge should not be called")
+	}
+}
+
+func TestConsoleServiceCreateRechargeRequestReturnsPendingRequest(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 29, 10, 0, 0, 0, time.UTC)
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleOwner,
+		},
+		createRechargeRequestResult: domain.RechargeRequest{
+			ID:                "rch_1",
+			WorkspaceID:       "wsp_1",
+			RequestedByUserID: "usr_1",
+			AmountMicroCNY:    30_000_000,
+			Currency:          "CNY",
+			Status:            domain.RechargeRequestStatusPending,
+			PaymentMethod:     "bank_transfer",
+			Contact:           "ops@example.com",
+			Note:              "top up",
+			CreatedAt:         createdAt,
+			UpdatedAt:         createdAt,
+		},
+	}
+	service, err := newConsoleService(store, "pepper", testTrialCreditConfig())
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	got, err := service.CreateRechargeRequest(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateRechargeRequestRequest{
+		AmountMicroCNY: 30_000_000,
+		PaymentMethod:  " bank_transfer ",
+		Contact:        " ops@example.com ",
+		Note:           " top up ",
+	})
+	if err != nil {
+		t.Fatalf("create recharge request: %v", err)
+	}
+
+	if store.createRechargeRequestInput.WorkspaceID != "wsp_1" || store.createRechargeRequestInput.RequestedByUserID != "usr_1" {
+		t.Fatalf("create input workspace/user = %+v", store.createRechargeRequestInput)
+	}
+	if store.createRechargeRequestInput.AmountMicroCNY != 30_000_000 || store.createRechargeRequestInput.PaymentMethod != "bank_transfer" || store.createRechargeRequestInput.Contact != "ops@example.com" || store.createRechargeRequestInput.Note != "top up" {
+		t.Fatalf("create input = %+v", store.createRechargeRequestInput)
+	}
+	if got.RechargeRequest.ID != "rch_1" || got.RechargeRequest.AmountCNY != "30.000000" || got.RechargeRequest.Status != domain.RechargeRequestStatusPending {
+		t.Fatalf("response = %+v", got.RechargeRequest)
 	}
 }
 
@@ -548,6 +729,16 @@ type fakeConsoleStore struct {
 	updateAPIKeyInput  repository.UpdateAPIKeyStatusWithAuditInput
 	updateAPIKeyResult domain.APIKey
 	updateAPIKeyErr    error
+
+	listRechargeWorkspaceID     string
+	listRechargeRequestsResult  []domain.RechargeRequest
+	listRechargeRequestsErr     error
+	listLedgerWorkspaceID       string
+	listLedgerEntriesResult     []domain.LedgerEntry
+	listLedgerEntriesErr        error
+	createRechargeRequestInput  repository.CreateRechargeRequestInput
+	createRechargeRequestResult domain.RechargeRequest
+	createRechargeRequestErr    error
 }
 
 func (f *fakeConsoleStore) ResolveCurrentWorkspace(_ context.Context, userID string) (repository.CurrentWorkspaceResult, error) {
@@ -580,4 +771,28 @@ func (f *fakeConsoleStore) UpdateAPIKeyStatusWithAudit(_ context.Context, input 
 		return domain.APIKey{}, f.updateAPIKeyErr
 	}
 	return f.updateAPIKeyResult, nil
+}
+
+func (f *fakeConsoleStore) ListRechargeRequestsByWorkspace(_ context.Context, workspaceID string, _ int) ([]domain.RechargeRequest, error) {
+	f.listRechargeWorkspaceID = workspaceID
+	if f.listRechargeRequestsErr != nil {
+		return nil, f.listRechargeRequestsErr
+	}
+	return f.listRechargeRequestsResult, nil
+}
+
+func (f *fakeConsoleStore) ListLedgerEntriesByWorkspace(_ context.Context, workspaceID string, _ int) ([]domain.LedgerEntry, error) {
+	f.listLedgerWorkspaceID = workspaceID
+	if f.listLedgerEntriesErr != nil {
+		return nil, f.listLedgerEntriesErr
+	}
+	return f.listLedgerEntriesResult, nil
+}
+
+func (f *fakeConsoleStore) CreateRechargeRequest(_ context.Context, input repository.CreateRechargeRequestInput) (domain.RechargeRequest, error) {
+	f.createRechargeRequestInput = input
+	if f.createRechargeRequestErr != nil {
+		return domain.RechargeRequest{}, f.createRechargeRequestErr
+	}
+	return f.createRechargeRequestResult, nil
 }

@@ -130,6 +130,43 @@ export interface ConsoleOverviewResponse {
   activation: ActivationOverviewResponse;
 }
 
+export interface BillingOverviewResponse {
+  workspace: WorkspaceResponse;
+  recharge_requests: RechargeRequestResponse[];
+  ledger_entries: LedgerEntryResponse[];
+}
+
+export interface LedgerEntryResponse {
+  id: string;
+  type: "recharge" | "trial_grant" | "consumption" | "refund" | "adjustment";
+  direction: "credit" | "debit";
+  amount_micro_cny: number;
+  amount_cny: string;
+  balance_after_micro_cny: number;
+  balance_after_cny: string;
+  currency: string;
+  api_key_id?: string;
+  api_key_name_snapshot: string;
+  model_id: string;
+  model_display_name_snapshot: string;
+  created_at: string;
+}
+
+export interface RechargeRequestResponse {
+  id: string;
+  requested_by_user_id: string;
+  amount_micro_cny: number;
+  amount_cny: string;
+  currency: string;
+  status: "pending" | "approved" | "rejected";
+  payment_method: string;
+  contact: string;
+  note: string;
+  admin_note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ActivationOverviewResponse {
   trial_credit_granted: boolean;
   trial_expires_at?: string;
@@ -176,4 +213,15 @@ export interface CreateAPIKeyRequest {
   daily_limit_micro_cny?: number;
   monthly_limit_micro_cny?: number;
   expires_at?: string;
+}
+
+export interface CreateRechargeRequestRequest {
+  amount_micro_cny: number;
+  payment_method: string;
+  contact: string;
+  note: string;
+}
+
+export interface CreateRechargeRequestResponse {
+  recharge_request: RechargeRequestResponse;
 }
