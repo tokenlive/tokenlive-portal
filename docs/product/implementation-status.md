@@ -100,11 +100,14 @@ Implemented:
 - API key state changes are scoped to Workspace.
 - API key state changes write audit logs.
 - Repeated enable, disable, or revoke calls are no-op updates when already in the requested state.
-- Overview activation state for trial credit, API key creation, and first API call placeholder.
+- Gateway runtime synchronization for API key create, enable, disable, and revoke.
+- Internal safe API key metadata endpoint for Admin.
+- Internal Workspace runtime resync endpoint for Admin repair actions.
+- Tenant bind and unbind internal operations trigger Workspace API key runtime resync.
+- Overview activation state for trial credit, API key creation, Admin runtime activation, and first API call placeholder.
 
 Still pending:
 
-- Gateway synchronization for API key lifecycle.
 - API key model whitelist editing.
 - API key spend enforcement.
 - Workspace switcher.
@@ -192,7 +195,6 @@ Authentication:
 
 Runtime integration:
 
-- API key lifecycle synchronization to Gateway.
 - Workspace balance/runtime copy synchronization.
 - Model permission synchronization.
 - Gateway settlement event ingestion.
@@ -201,6 +203,7 @@ Runtime integration:
 Operations and Admin integration:
 
 - Model catalog editing and publication from `tokenlive-admin`.
+- Portal Workspace API key safe metadata and runtime resync proxy/UI from `tokenlive-admin`.
 - Recharge review from `tokenlive-admin`.
 - Support ticket processing from `tokenlive-admin`.
 - User and Workspace risk controls from `tokenlive-admin`.

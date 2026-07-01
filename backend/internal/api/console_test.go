@@ -118,10 +118,12 @@ func TestConsoleOverviewReturnsActivationShape(t *testing.T) {
 				TrialCreditGranted: true,
 				TrialExpiresAt:     &trialExpiresAt,
 				APIKeyCreated:      true,
+				RuntimeActivated:   true,
 				FirstCallMade:      false,
 				Steps: []ActivationStepResponse{
 					{Key: "trial_credit", Label: "Trial credit granted", Status: ActivationStepCompleted},
 					{Key: "api_key", Label: "Create an API key", Status: ActivationStepCompleted},
+					{Key: "runtime_activation", Label: "Activate runtime access", Status: ActivationStepCompleted},
 					{Key: "first_call", Label: "Make your first API call", Status: ActivationStepPending},
 				},
 			},
@@ -153,7 +155,10 @@ func TestConsoleOverviewReturnsActivationShape(t *testing.T) {
 	if !body.Activation.APIKeyCreated || body.Activation.FirstCallMade {
 		t.Fatalf("activation api/first call = %+v", body.Activation)
 	}
-	if len(body.Activation.Steps) != 3 || body.Activation.Steps[2].Key != "first_call" || body.Activation.Steps[2].Status != ActivationStepPending {
+	if !body.Activation.RuntimeActivated {
+		t.Fatalf("activation runtime = %+v", body.Activation)
+	}
+	if len(body.Activation.Steps) != 4 || body.Activation.Steps[2].Key != "runtime_activation" || body.Activation.Steps[3].Key != "first_call" || body.Activation.Steps[3].Status != ActivationStepPending {
 		t.Fatalf("activation steps = %+v", body.Activation.Steps)
 	}
 	if console.overviewUser.ID != "usr_1" {

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/api"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/config"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/database"
@@ -32,7 +33,8 @@ var (
 	}
 	newPortalRepositories           = repository.New
 	newPortalAuthService            = api.NewAuthService
-	newPortalConsoleService         = api.NewConsoleService
+	newPortalConsoleService         = api.NewConsoleServiceWithRuntimeSyncer
+	newPortalAPIKeyRuntimeSyncer    = newAPIKeyRuntimeSyncer
 	registerPortalPublicModelRoutes = api.RegisterPublicModelRoutes
 	registerPortalAuthRoutes        = api.RegisterAuthRoutes
 	registerPortalOAuthRoutes       = api.RegisterOAuthRoutes
@@ -116,16 +118,30 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 	}
 
 	modelRepository := newPortalRepositories(db)
+	apiKeyRuntimeSyncer, closeRuntimeSyncer, err := newPortalAPIKeyRuntimeSyncer(cfg.GatewayRedis)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("create api key runtime syncer: %w", err)
+	}
+
+	cleanupWithRuntime := func() {
+		if closeRuntimeSyncer != nil {
+			if err := closeRuntimeSyncer(); err != nil {
+				logger.Printf("portal-api api key runtime syncer close failed: %v", err)
+			}
+		}
+		cleanup()
+	}
 
 	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth, cfg.GitHubOAuth)
 	if err != nil {
-		cleanup()
+		cleanupWithRuntime()
 		return nil, fmt.Errorf("create auth service: %w", err)
 	}
 
-	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper, cfg.TrialCredit)
+	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper, cfg.TrialCredit, apiKeyRuntimeSyncer)
 	if err != nil {
-		cleanup()
+		cleanupWithRuntime()
 		return nil, fmt.Errorf("create console service: %w", err)
 	}
 
@@ -133,7 +149,19 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 	registerPortalAuthRoutes(mux, authService, cfg.Env)
 	registerPortalOAuthRoutes(mux, authService, cfg.Env)
 	registerPortalConsoleRoutes(mux, consoleService, authService)
-	api.RegisterInternalRoutes(mux, modelRepository, cfg.InternalAPIToken)
+	api.RegisterInternalRoutes(mux, modelRepository, cfg.InternalAPIToken, apiKeyRuntimeSyncer)
 
-	return cleanup, nil
+	return cleanupWithRuntime, nil
+}
+
+func newAPIKeyRuntimeSyncer(cfg config.GatewayRedisConfig) (api.APIKeyRuntimeSyncer, func() error, error) {
+	if !cfg.Enabled() {
+		return api.NewNoopAPIKeyRuntimeSyncer(), nil, nil
+	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     cfg.Addr,
+		Password: cfg.Password,
+		DB:       cfg.DB,
+	})
+	return api.NewRedisAPIKeyRuntimeSyncer(client), client.Close, nil
 }

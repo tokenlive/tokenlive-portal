@@ -19,6 +19,7 @@ type Config struct {
 	AuthPepper       string
 	InternalAPIToken string
 	TrialCredit      TrialCreditConfig
+	GatewayRedis     GatewayRedisConfig
 	GoogleOAuth      GoogleOAuthConfig
 	GitHubOAuth      GitHubOAuthConfig
 }
@@ -48,6 +49,16 @@ type TrialCreditConfig struct {
 	TTLDays        int
 }
 
+type GatewayRedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
+func (c GatewayRedisConfig) Enabled() bool {
+	return c.Addr != ""
+}
+
 func Load() (Config, error) {
 	env := normalizeEnv(envOrDefault("PORTAL_ENV", "development"))
 	authPepper := os.Getenv("PORTAL_AUTH_PEPPER")
@@ -64,6 +75,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	gatewayRedis, err := loadGatewayRedisConfig()
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		Env:              env,
@@ -72,6 +87,7 @@ func Load() (Config, error) {
 		AuthPepper:       authPepper,
 		InternalAPIToken: internalAPIToken,
 		TrialCredit:      trialCredit,
+		GatewayRedis:     gatewayRedis,
 		GoogleOAuth:      loadGoogleOAuthConfig(),
 		GitHubOAuth:      loadGitHubOAuthConfig(),
 	}, nil
@@ -113,6 +129,21 @@ func loadTrialCreditConfig() (TrialCreditConfig, error) {
 	return TrialCreditConfig{
 		AmountMicroCNY: amount,
 		TTLDays:        ttlDays,
+	}, nil
+}
+
+func loadGatewayRedisConfig() (GatewayRedisConfig, error) {
+	db, err := intEnvOrDefault("PORTAL_GATEWAY_REDIS_DB", 0)
+	if err != nil {
+		return GatewayRedisConfig{}, err
+	}
+	if db < 0 {
+		return GatewayRedisConfig{}, fmt.Errorf("PORTAL_GATEWAY_REDIS_DB must be greater than or equal to zero")
+	}
+	return GatewayRedisConfig{
+		Addr:     strings.TrimSpace(os.Getenv("PORTAL_GATEWAY_REDIS_ADDR")),
+		Password: strings.TrimSpace(os.Getenv("PORTAL_GATEWAY_REDIS_PASSWORD")),
+		DB:       db,
 	}, nil
 }
 

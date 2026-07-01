@@ -27,6 +27,19 @@ describe("activation action helpers", () => {
     );
   });
 
+  it("routes runtime activation to the dashboard waiting state", () => {
+    assert.deepEqual(
+      getActivationStepAction({
+        key: "runtime_activation",
+        status: "pending",
+      }),
+      {
+        href: "/console/dashboard",
+        label: "Waiting for admin",
+      }
+    );
+  });
+
   it("does not show actions for completed steps", () => {
     assert.equal(
       getActivationStepAction({ key: "api_key", status: "completed" }),

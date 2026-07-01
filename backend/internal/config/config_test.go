@@ -163,3 +163,31 @@ func TestLoadOAuthConfigs(t *testing.T) {
 		t.Fatalf("GitHubOAuth = %+v", got.GitHubOAuth)
 	}
 }
+
+func TestLoadGatewayRedisConfig(t *testing.T) {
+	t.Setenv("PORTAL_GATEWAY_REDIS_ADDR", " redis.example.com:6379 ")
+	t.Setenv("PORTAL_GATEWAY_REDIS_PASSWORD", " secret ")
+	t.Setenv("PORTAL_GATEWAY_REDIS_DB", "5")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	if got.GatewayRedis.Addr != "redis.example.com:6379" || got.GatewayRedis.Password != "secret" || got.GatewayRedis.DB != 5 {
+		t.Fatalf("GatewayRedis = %+v", got.GatewayRedis)
+	}
+	if !got.GatewayRedis.Enabled() {
+		t.Fatalf("GatewayRedis should be enabled")
+	}
+}
+
+func TestLoadGatewayRedisRejectsInvalidDB(t *testing.T) {
+	t.Setenv("PORTAL_GATEWAY_REDIS_ADDR", "redis.example.com:6379")
+	t.Setenv("PORTAL_GATEWAY_REDIS_DB", "bad")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "PORTAL_GATEWAY_REDIS_DB") {
+		t.Fatalf("Load() err = %v, want gateway redis db error", err)
+	}
+}

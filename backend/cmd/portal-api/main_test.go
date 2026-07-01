@@ -68,6 +68,11 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 			AmountMicroCNY: 10_000_000,
 			TTLDays:        7,
 		},
+		GatewayRedis: config.GatewayRedisConfig{
+			Addr:     "gateway-redis:6379",
+			Password: "secret",
+			DB:       5,
+		},
 		GitHubOAuth: config.GitHubOAuthConfig{
 			ClientID:     "github-client",
 			ClientSecret: "github-secret",
@@ -115,6 +120,12 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 	if capturedPortalGitHubOAuth.ClientID != "github-client" || capturedPortalGitHubOAuth.ClientSecret != "github-secret" || capturedPortalGitHubOAuth.RedirectURL != "https://portal.example.com/api/auth/github/callback" {
 		t.Fatalf("github oauth = %+v", capturedPortalGitHubOAuth)
 	}
+	if capturedGatewayRedisConfig.Addr != "gateway-redis:6379" || capturedGatewayRedisConfig.Password != "secret" || capturedGatewayRedisConfig.DB != 5 {
+		t.Fatalf("gateway redis config = %+v", capturedGatewayRedisConfig)
+	}
+	if !capturedPortalConsoleRuntimeSyncer {
+		t.Fatalf("console service did not receive runtime syncer")
+	}
 }
 
 func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *testing.T) {
@@ -128,7 +139,7 @@ func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *
 			return nil
 		}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.TrialCreditConfig) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.TrialCreditConfig, _ api.APIKeyRuntimeSyncer) (api.ConsoleService, error) {
 		return nil, errors.New("console constructor failed")
 	}
 
@@ -168,6 +179,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	originalNewRepositories := newPortalRepositories
 	originalNewAuthService := newPortalAuthService
 	originalNewConsoleService := newPortalConsoleService
+	originalNewAPIKeyRuntimeSyncer := newPortalAPIKeyRuntimeSyncer
 	originalRegisterPublicModelRoutes := registerPortalPublicModelRoutes
 	originalRegisterAuthRoutes := registerPortalAuthRoutes
 	originalRegisterOAuthRoutes := registerPortalOAuthRoutes
@@ -181,13 +193,20 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	}
 	capturedPortalAuthTrialCredit = config.TrialCreditConfig{}
 	capturedPortalConsoleTrialCredit = config.TrialCreditConfig{}
+	capturedGatewayRedisConfig = config.GatewayRedisConfig{}
+	capturedPortalConsoleRuntimeSyncer = false
+	newPortalAPIKeyRuntimeSyncer = func(cfg config.GatewayRedisConfig) (api.APIKeyRuntimeSyncer, func() error, error) {
+		capturedGatewayRedisConfig = cfg
+		return fakePortalAPIKeyRuntimeSyncer{}, func() error { return nil }, nil
+	}
 	newPortalAuthService = func(_ *repository.Repositories, _ string, _ string, trialCredit config.TrialCreditConfig, _ config.GoogleOAuthConfig, githubOAuth config.GitHubOAuthConfig) (api.AuthService, error) {
 		capturedPortalAuthTrialCredit = trialCredit
 		capturedPortalGitHubOAuth = githubOAuth
 		return fakePortalAuthService{}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig, runtimeSyncer api.APIKeyRuntimeSyncer) (api.ConsoleService, error) {
 		capturedPortalConsoleTrialCredit = trialCredit
+		capturedPortalConsoleRuntimeSyncer = runtimeSyncer != nil
 		return fakePortalConsoleService{}, nil
 	}
 	registerPortalPublicModelRoutes = func(mux *http.ServeMux, _ api.PublicModelReader) {
@@ -222,6 +241,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		newPortalRepositories = originalNewRepositories
 		newPortalAuthService = originalNewAuthService
 		newPortalConsoleService = originalNewConsoleService
+		newPortalAPIKeyRuntimeSyncer = originalNewAPIKeyRuntimeSyncer
 		registerPortalPublicModelRoutes = originalRegisterPublicModelRoutes
 		registerPortalAuthRoutes = originalRegisterAuthRoutes
 		registerPortalOAuthRoutes = originalRegisterOAuthRoutes
@@ -232,6 +252,18 @@ func stubPortalRouteSeams(t *testing.T) func() {
 var capturedPortalAuthTrialCredit config.TrialCreditConfig
 var capturedPortalConsoleTrialCredit config.TrialCreditConfig
 var capturedPortalGitHubOAuth config.GitHubOAuthConfig
+var capturedGatewayRedisConfig config.GatewayRedisConfig
+var capturedPortalConsoleRuntimeSyncer bool
+
+type fakePortalAPIKeyRuntimeSyncer struct{}
+
+func (fakePortalAPIKeyRuntimeSyncer) UpsertAPIKey(context.Context, api.APIKeyRuntimeRecord) error {
+	return nil
+}
+
+func (fakePortalAPIKeyRuntimeSyncer) DeleteAPIKey(context.Context, string) error {
+	return nil
+}
 
 type fakePortalAuthService struct{}
 

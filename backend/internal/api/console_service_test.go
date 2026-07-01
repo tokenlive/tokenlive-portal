@@ -487,6 +487,228 @@ func TestConsoleServiceCreateAPIKeyReturnsSecretOnce(t *testing.T) {
 	}
 }
 
+func TestConsoleServiceCreateAPIKeySyncsRuntimeForBoundWorkspace(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	expiresAt := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleOwner,
+		},
+		createAPIKeyResult: repository.CreateAPIKeyResult{
+			APIKey: domain.APIKey{
+				ID:              "ak_1",
+				WorkspaceID:     "wsp_1",
+				Name:            "prod",
+				KeyHash:         "hash_1",
+				Status:          domain.APIKeyStatusEnabled,
+				CreatedByUserID: "usr_1",
+				ExpiresAt:       &expiresAt,
+			},
+			Secret: "tl_live_secret",
+		},
+	}
+	syncer := &fakeAPIKeyRuntimeSyncer{}
+	service, err := newConsoleServiceWithRuntimeSyncer(store, "pepper", testTrialCreditConfig(), syncer)
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	_, err = service.CreateAPIKey(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateAPIKeyRequest{Name: "prod"})
+	if err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	if syncer.upsert.KeyHash != "hash_1" || syncer.upsert.KeyID != "ak_1" {
+		t.Fatalf("upsert key identity = %+v", syncer.upsert)
+	}
+	if syncer.upsert.UserID != "usr_1" || syncer.upsert.WorkspaceID != "wsp_1" {
+		t.Fatalf("upsert user/workspace = %+v", syncer.upsert)
+	}
+	if syncer.upsert.Tenant != "tenant_a" || syncer.upsert.UserTenant != "tenant_a" {
+		t.Fatalf("upsert tenant fields = %+v", syncer.upsert)
+	}
+	if syncer.upsert.Status != 1 || syncer.upsert.Quota != -1 || syncer.upsert.ExpiresAt != expiresAt.Unix() {
+		t.Fatalf("upsert runtime fields = %+v", syncer.upsert)
+	}
+	if syncer.deletedHash != "" {
+		t.Fatalf("deleted hash = %q, want none", syncer.deletedHash)
+	}
+}
+
+func TestConsoleServiceCreateAPIKeyDeletesRuntimeWhenWorkspaceUnbound(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleOwner,
+		},
+		createAPIKeyResult: repository.CreateAPIKeyResult{
+			APIKey: domain.APIKey{
+				ID:              "ak_1",
+				WorkspaceID:     "wsp_1",
+				KeyHash:         "hash_1",
+				Status:          domain.APIKeyStatusEnabled,
+				CreatedByUserID: "usr_1",
+			},
+			Secret: "tl_live_secret",
+		},
+	}
+	syncer := &fakeAPIKeyRuntimeSyncer{}
+	service, err := newConsoleServiceWithRuntimeSyncer(store, "pepper", testTrialCreditConfig(), syncer)
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	_, err = service.CreateAPIKey(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateAPIKeyRequest{Name: "prod"})
+	if err != nil {
+		t.Fatalf("create api key: %v", err)
+	}
+
+	if syncer.deletedHash != "hash_1" {
+		t.Fatalf("deleted hash = %q, want hash_1", syncer.deletedHash)
+	}
+	if syncer.upsert.KeyHash != "" {
+		t.Fatalf("upsert = %+v, want none", syncer.upsert)
+	}
+}
+
+func TestConsoleServiceCreateAPIKeyIgnoresRuntimeSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleOwner,
+		},
+		createAPIKeyResult: repository.CreateAPIKeyResult{
+			APIKey: domain.APIKey{
+				ID:              "ak_1",
+				WorkspaceID:     "wsp_1",
+				KeyHash:         "hash_1",
+				Status:          domain.APIKeyStatusEnabled,
+				CreatedByUserID: "usr_1",
+			},
+			Secret: "tl_live_secret",
+		},
+	}
+	syncer := &fakeAPIKeyRuntimeSyncer{upsertErr: errors.New("redis down")}
+	service, err := newConsoleServiceWithRuntimeSyncer(store, "pepper", testTrialCreditConfig(), syncer)
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	got, err := service.CreateAPIKey(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, CreateAPIKeyRequest{Name: "prod"})
+	if err != nil {
+		t.Fatalf("create api key err = %v, want nil", err)
+	}
+	if got.APIKey.ID != "ak_1" || got.Secret != "tl_live_secret" {
+		t.Fatalf("response = %+v", got)
+	}
+	if syncer.upsert.KeyHash != "hash_1" {
+		t.Fatalf("upsert key hash = %q, want attempted sync", syncer.upsert.KeyHash)
+	}
+}
+
+func TestConsoleServiceAPIKeyStatusUpdateSyncsRuntime(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	tests := []struct {
+		name       string
+		call       func(*consoleService, context.Context, CurrentUser, string) (APIKeyResponse, error)
+		status     domain.APIKeyStatus
+		wantUpsert bool
+	}{
+		{name: "enable upserts", call: (*consoleService).EnableAPIKey, status: domain.APIKeyStatusEnabled, wantUpsert: true},
+		{name: "disable deletes", call: (*consoleService).DisableAPIKey, status: domain.APIKeyStatusDisabled},
+		{name: "revoke deletes", call: (*consoleService).RevokeAPIKey, status: domain.APIKeyStatusRevoked},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeConsoleStore{
+				currentWorkspace: repository.CurrentWorkspaceResult{
+					Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+					Role:      domain.MemberRoleOwner,
+				},
+				updateAPIKeyResult: domain.APIKey{
+					ID:              "ak_1",
+					WorkspaceID:     "wsp_1",
+					KeyHash:         "hash_1",
+					Status:          tt.status,
+					CreatedByUserID: "usr_1",
+				},
+			}
+			syncer := &fakeAPIKeyRuntimeSyncer{}
+			service, err := newConsoleServiceWithRuntimeSyncer(store, "pepper", testTrialCreditConfig(), syncer)
+			if err != nil {
+				t.Fatalf("new console service: %v", err)
+			}
+
+			_, err = tt.call(service, context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, "ak_1")
+			if err != nil {
+				t.Fatalf("update api key: %v", err)
+			}
+
+			if tt.wantUpsert {
+				if syncer.upsert.KeyHash != "hash_1" || syncer.upsert.Status != 1 {
+					t.Fatalf("upsert = %+v, want enabled runtime key", syncer.upsert)
+				}
+				if syncer.deletedHash != "" {
+					t.Fatalf("deleted hash = %q, want none", syncer.deletedHash)
+				}
+				return
+			}
+			if syncer.deletedHash != "hash_1" {
+				t.Fatalf("deleted hash = %q, want hash_1", syncer.deletedHash)
+			}
+			if syncer.upsert.KeyHash != "" {
+				t.Fatalf("upsert = %+v, want none", syncer.upsert)
+			}
+		})
+	}
+}
+
+func TestConsoleServiceStatusUpdateIgnoresRuntimeSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	store := &fakeConsoleStore{
+		currentWorkspace: repository.CurrentWorkspaceResult{
+			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Role:      domain.MemberRoleOwner,
+		},
+		updateAPIKeyResult: domain.APIKey{
+			ID:              "ak_1",
+			WorkspaceID:     "wsp_1",
+			KeyHash:         "hash_1",
+			Status:          domain.APIKeyStatusDisabled,
+			CreatedByUserID: "usr_1",
+		},
+	}
+	syncer := &fakeAPIKeyRuntimeSyncer{deleteErr: errors.New("redis down")}
+	service, err := newConsoleServiceWithRuntimeSyncer(store, "pepper", testTrialCreditConfig(), syncer)
+	if err != nil {
+		t.Fatalf("new console service: %v", err)
+	}
+
+	got, err := service.DisableAPIKey(context.Background(), CurrentUser{ID: "usr_1", TermsAccepted: true}, "ak_1")
+	if err != nil {
+		t.Fatalf("disable api key err = %v, want nil", err)
+	}
+	if got.ID != "ak_1" || got.Status != domain.APIKeyStatusDisabled {
+		t.Fatalf("response = %+v", got)
+	}
+	if syncer.deletedHash != "hash_1" {
+		t.Fatalf("deleted hash = %q, want attempted delete", syncer.deletedHash)
+	}
+}
+
 func TestConsoleServiceListAPIKeysDoesNotExposeSecret(t *testing.T) {
 	t.Parallel()
 
@@ -612,6 +834,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 	t.Parallel()
 
 	trialGrantedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	tenantCode := "tenant_a"
 	store := &fakeConsoleStore{
 		currentWorkspace: repository.CurrentWorkspaceResult{
 			Workspace: domain.Workspace{
@@ -619,6 +842,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 				Name:           "Dev",
 				Slug:           "dev",
 				Status:         domain.WorkspaceStatusActive,
+				TenantCode:     &tenantCode,
 				TrialGrantedAt: &trialGrantedAt,
 			},
 			Role: domain.MemberRoleBilling,
@@ -660,11 +884,14 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 	if !got.Activation.APIKeyCreated {
 		t.Fatalf("expected api key created")
 	}
+	if !got.Activation.RuntimeActivated {
+		t.Fatalf("expected runtime activated when workspace has tenant_code")
+	}
 	if got.Activation.FirstCallMade {
 		t.Fatalf("first_call_made should remain false until usage slice")
 	}
-	if len(got.Activation.Steps) != 3 {
-		t.Fatalf("steps len = %d, want 3", len(got.Activation.Steps))
+	if len(got.Activation.Steps) != 4 {
+		t.Fatalf("steps len = %d, want 4", len(got.Activation.Steps))
 	}
 	if got.Activation.Steps[0].Key != "trial_credit" || got.Activation.Steps[0].Status != ActivationStepCompleted {
 		t.Fatalf("trial step = %+v", got.Activation.Steps[0])
@@ -672,7 +899,10 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 	if got.Activation.Steps[1].Key != "api_key" || got.Activation.Steps[1].Status != ActivationStepCompleted {
 		t.Fatalf("api key step = %+v", got.Activation.Steps[1])
 	}
-	if got.Activation.Steps[2].Key != "first_call" || got.Activation.Steps[2].Status != ActivationStepPending {
+	if got.Activation.Steps[2].Key != "runtime_activation" || got.Activation.Steps[2].Status != ActivationStepCompleted {
+		t.Fatalf("runtime activation step = %+v", got.Activation.Steps[2])
+	}
+	if got.Activation.Steps[3].Key != "first_call" || got.Activation.Steps[3].Status != ActivationStepPending {
 		t.Fatalf("first call step = %+v", got.Activation.Steps[2])
 	}
 }
@@ -795,4 +1025,21 @@ func (f *fakeConsoleStore) CreateRechargeRequest(_ context.Context, input reposi
 		return domain.RechargeRequest{}, f.createRechargeRequestErr
 	}
 	return f.createRechargeRequestResult, nil
+}
+
+type fakeAPIKeyRuntimeSyncer struct {
+	upsert      APIKeyRuntimeRecord
+	deletedHash string
+	upsertErr   error
+	deleteErr   error
+}
+
+func (f *fakeAPIKeyRuntimeSyncer) UpsertAPIKey(_ context.Context, record APIKeyRuntimeRecord) error {
+	f.upsert = record
+	return f.upsertErr
+}
+
+func (f *fakeAPIKeyRuntimeSyncer) DeleteAPIKey(_ context.Context, keyHash string) error {
+	f.deletedHash = keyHash
+	return f.deleteErr
 }

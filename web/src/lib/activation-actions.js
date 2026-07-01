@@ -3,6 +3,10 @@ const ACTION_BY_STEP = {
     href: "/console/api-keys",
     label: "Create key",
   },
+  runtime_activation: {
+    href: "/console/dashboard",
+    label: "Waiting for admin",
+  },
   first_call: {
     href: "/console/dashboard#quick-start",
     label: "View curl",

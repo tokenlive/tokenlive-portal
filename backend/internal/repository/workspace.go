@@ -185,6 +185,19 @@ func (r *Repositories) BindTenantCode(ctx context.Context, id string, tenantCode
 	return nil
 }
 
+func (r *Repositories) FindWorkspaceByID(ctx context.Context, id string) (domain.Workspace, error) {
+	var workspace domain.Workspace
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND deleted_at IS NULL", id).
+		First(&workspace).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Workspace{}, ErrWorkspaceNotFound
+		}
+		return domain.Workspace{}, fmt.Errorf("find workspace by id: %w", err)
+	}
+	return workspace, nil
+}
+
 // SearchWorkspaces searches workspaces by ID, name, or slug.
 func (r *Repositories) SearchWorkspaces(ctx context.Context, keyword string, limit int) ([]domain.Workspace, error) {
 	var workspaces []domain.Workspace
@@ -198,4 +211,3 @@ func (r *Repositories) SearchWorkspaces(ctx context.Context, keyword string, lim
 	err := db.Limit(limit).Find(&workspaces).Error
 	return workspaces, err
 }
-

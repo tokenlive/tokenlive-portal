@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +32,177 @@ func testRepos(t *testing.T) *repository.Repositories {
 	}
 
 	return repository.New(db)
+}
+
+func TestInternalAPIListAPIKeysReturnsSafeMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{
+		apiKeys: []domain.APIKey{{
+			ID:          "ak_1",
+			WorkspaceID: "wsp_1",
+			Name:        "prod",
+			KeyPrefix:   "tl_live_abc",
+			SecretLast4: "wxyz",
+			KeyHash:     "hash-must-not-leak",
+			Status:      domain.APIKeyStatusEnabled,
+			CreatedAt:   time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC),
+			UpdatedAt:   time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC),
+		}},
+	}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token")
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/workspaces/wsp_1/api-keys", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "hash-must-not-leak") || strings.Contains(body, "key_hash") || strings.Contains(body, "tl_live_secret") {
+		t.Fatalf("response leaked secret material: %s", body)
+	}
+	var resp WorkspaceAPIKeysResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.APIKeys) != 1 || resp.APIKeys[0].ID != "ak_1" || resp.APIKeys[0].SecretLast4 != "wxyz" {
+		t.Fatalf("api keys = %+v", resp.APIKeys)
+	}
+	if store.listAPIKeysWorkspaceID != "wsp_1" {
+		t.Fatalf("list workspace = %q, want wsp_1", store.listAPIKeysWorkspaceID)
+	}
+}
+
+func TestInternalAPIRuntimeSyncReplaysWorkspaceAPIKeys(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	store := &fakeInternalStore{
+		workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+		apiKeys: []domain.APIKey{
+			{ID: "ak_enabled", WorkspaceID: "wsp_1", KeyHash: "hash_enabled", Status: domain.APIKeyStatusEnabled, CreatedByUserID: "usr_1"},
+			{ID: "ak_disabled", WorkspaceID: "wsp_1", KeyHash: "hash_disabled", Status: domain.APIKeyStatusDisabled, CreatedByUserID: "usr_1"},
+		},
+	}
+	syncer := &fakeInternalRuntimeSyncer{}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token", syncer)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/runtime-sync", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_enabled" || syncer.upserts[0].Tenant != "tenant_a" {
+		t.Fatalf("upserts = %+v", syncer.upserts)
+	}
+	if len(syncer.deletes) != 1 || syncer.deletes[0] != "hash_disabled" {
+		t.Fatalf("deletes = %+v", syncer.deletes)
+	}
+}
+
+func TestInternalAPIBindTenantTriggersRuntimeSync(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{
+		workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+		apiKeys: []domain.APIKey{{
+			ID:              "ak_1",
+			WorkspaceID:     "wsp_1",
+			KeyHash:         "hash_1",
+			Status:          domain.APIKeyStatusEnabled,
+			CreatedByUserID: "usr_1",
+		}},
+	}
+	syncer := &fakeInternalRuntimeSyncer{}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token", syncer)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/bind-tenant", strings.NewReader(`{"tenant_code":"tenant_a"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if store.boundWorkspaceID != "wsp_1" || store.boundTenantCode == nil || *store.boundTenantCode != "tenant_a" {
+		t.Fatalf("bind call = workspace:%q tenant:%v", store.boundWorkspaceID, store.boundTenantCode)
+	}
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" || syncer.upserts[0].Tenant != "tenant_a" {
+		t.Fatalf("upserts = %+v", syncer.upserts)
+	}
+}
+
+func TestInternalAPIBindTenantIgnoresRuntimeSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{
+		workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+		apiKeys: []domain.APIKey{{
+			ID:              "ak_1",
+			WorkspaceID:     "wsp_1",
+			KeyHash:         "hash_1",
+			Status:          domain.APIKeyStatusEnabled,
+			CreatedByUserID: "usr_1",
+		}},
+	}
+	syncer := &fakeInternalRuntimeSyncer{upsertErr: errors.New("redis down")}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token", syncer)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/bind-tenant", strings.NewReader(`{"tenant_code":"tenant_a"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s, want 204 despite sync failure", rec.Code, rec.Body.String())
+	}
+	if store.boundTenantCode == nil || *store.boundTenantCode != "tenant_a" {
+		t.Fatalf("tenant was not bound: %v", store.boundTenantCode)
+	}
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" {
+		t.Fatalf("upserts = %+v, want attempted sync", syncer.upserts)
+	}
+}
+
+func TestInternalAPIRuntimeSyncReturnsErrorOnRuntimeSyncFailure(t *testing.T) {
+	t.Parallel()
+
+	tenantCode := "tenant_a"
+	store := &fakeInternalStore{
+		workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+		apiKeys: []domain.APIKey{{
+			ID:              "ak_1",
+			WorkspaceID:     "wsp_1",
+			KeyHash:         "hash_1",
+			Status:          domain.APIKeyStatusEnabled,
+			CreatedByUserID: "usr_1",
+		}},
+	}
+	syncer := &fakeInternalRuntimeSyncer{upsertErr: errors.New("redis down")}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token", syncer)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/runtime-sync", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d body = %s, want 500 for explicit runtime sync", rec.Code, rec.Body.String())
+	}
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" {
+		t.Fatalf("upserts = %+v, want attempted sync", syncer.upserts)
+	}
 }
 
 func TestInternalAPIRoutes(t *testing.T) {
@@ -150,4 +323,62 @@ func TestInternalAPIRoutes(t *testing.T) {
 			t.Errorf("expected nil tenant_code, got %s", *ws.TenantCode)
 		}
 	})
+}
+
+type fakeInternalStore struct {
+	users []domain.User
+
+	workspaces []domain.Workspace
+	workspace  domain.Workspace
+
+	apiKeys                []domain.APIKey
+	listAPIKeysWorkspaceID string
+
+	boundWorkspaceID string
+	boundTenantCode  *string
+}
+
+func (f *fakeInternalStore) SearchUsers(context.Context, string, int) ([]domain.User, error) {
+	return f.users, nil
+}
+
+func (f *fakeInternalStore) SearchWorkspaces(context.Context, string, int) ([]domain.Workspace, error) {
+	if len(f.workspaces) > 0 {
+		return f.workspaces, nil
+	}
+	return []domain.Workspace{f.workspace}, nil
+}
+
+func (f *fakeInternalStore) BindTenantCode(_ context.Context, id string, tenantCode *string) error {
+	f.boundWorkspaceID = id
+	f.boundTenantCode = tenantCode
+	f.workspace.ID = id
+	f.workspace.TenantCode = tenantCode
+	return nil
+}
+
+func (f *fakeInternalStore) FindWorkspaceByID(context.Context, string) (domain.Workspace, error) {
+	return f.workspace, nil
+}
+
+func (f *fakeInternalStore) ListAPIKeysByWorkspace(_ context.Context, workspaceID string) ([]domain.APIKey, error) {
+	f.listAPIKeysWorkspaceID = workspaceID
+	return f.apiKeys, nil
+}
+
+type fakeInternalRuntimeSyncer struct {
+	upserts   []APIKeyRuntimeRecord
+	deletes   []string
+	upsertErr error
+	deleteErr error
+}
+
+func (f *fakeInternalRuntimeSyncer) UpsertAPIKey(_ context.Context, record APIKeyRuntimeRecord) error {
+	f.upserts = append(f.upserts, record)
+	return f.upsertErr
+}
+
+func (f *fakeInternalRuntimeSyncer) DeleteAPIKey(_ context.Context, keyHash string) error {
+	f.deletes = append(f.deletes, keyHash)
+	return f.deleteErr
 }

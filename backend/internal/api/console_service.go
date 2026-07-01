@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -78,6 +79,7 @@ type ActivationOverviewResponse struct {
 	TrialCreditGranted bool                     `json:"trial_credit_granted"`
 	TrialExpiresAt     *time.Time               `json:"trial_expires_at"`
 	APIKeyCreated      bool                     `json:"api_key_created"`
+	RuntimeActivated   bool                     `json:"runtime_activated"`
 	FirstCallMade      bool                     `json:"first_call_made"`
 	Steps              []ActivationStepResponse `json:"steps"`
 }
@@ -191,15 +193,23 @@ type consoleStore interface {
 }
 
 type consoleService struct {
-	store       consoleStore
-	authPepper  string
-	trialCredit config.TrialCreditConfig
-	nowFunc     func() time.Time
+	store         consoleStore
+	authPepper    string
+	trialCredit   config.TrialCreditConfig
+	runtimeSyncer APIKeyRuntimeSyncer
+	nowFunc       func() time.Time
 }
 
 func newConsoleService(store consoleStore, authPepper string, trialCredit config.TrialCreditConfig) (*consoleService, error) {
+	return newConsoleServiceWithRuntimeSyncer(store, authPepper, trialCredit, NewNoopAPIKeyRuntimeSyncer())
+}
+
+func newConsoleServiceWithRuntimeSyncer(store consoleStore, authPepper string, trialCredit config.TrialCreditConfig, runtimeSyncer APIKeyRuntimeSyncer) (*consoleService, error) {
 	if store == nil {
 		return nil, errors.New("console store is required")
+	}
+	if runtimeSyncer == nil {
+		return nil, errors.New("api key runtime syncer is required")
 	}
 	if strings.TrimSpace(authPepper) == "" {
 		return nil, errors.New("auth pepper must not be empty")
@@ -211,10 +221,11 @@ func newConsoleService(store consoleStore, authPepper string, trialCredit config
 		return nil, errors.New("trial credit ttl must be greater than zero")
 	}
 	return &consoleService{
-		store:       store,
-		authPepper:  authPepper,
-		trialCredit: trialCredit,
-		nowFunc:     func() time.Time { return time.Now().UTC() },
+		store:         store,
+		authPepper:    authPepper,
+		trialCredit:   trialCredit,
+		runtimeSyncer: runtimeSyncer,
+		nowFunc:       func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 
@@ -223,6 +234,13 @@ func NewConsoleService(repos *repository.Repositories, authPepper string, trialC
 		return nil, errors.New("console repositories are required")
 	}
 	return newConsoleService(repos, authPepper, trialCredit)
+}
+
+func NewConsoleServiceWithRuntimeSyncer(repos *repository.Repositories, authPepper string, trialCredit config.TrialCreditConfig, runtimeSyncer APIKeyRuntimeSyncer) (ConsoleService, error) {
+	if repos == nil {
+		return nil, errors.New("console repositories are required")
+	}
+	return newConsoleServiceWithRuntimeSyncer(repos, authPepper, trialCredit, runtimeSyncer)
 }
 
 func (s *consoleService) Overview(ctx context.Context, user CurrentUser) (ConsoleOverviewResponse, error) {
@@ -243,6 +261,7 @@ func (s *consoleService) Overview(ctx context.Context, user CurrentUser) (Consol
 		trialExpiresAt = &expires
 	}
 	apiKeyCreated := len(keys) > 0
+	runtimeActivated := workspaceRuntimeActivated(current.Workspace)
 	firstCallMade := false
 
 	return ConsoleOverviewResponse{
@@ -251,8 +270,9 @@ func (s *consoleService) Overview(ctx context.Context, user CurrentUser) (Consol
 			TrialCreditGranted: trialGranted,
 			TrialExpiresAt:     trialExpiresAt,
 			APIKeyCreated:      apiKeyCreated,
+			RuntimeActivated:   runtimeActivated,
 			FirstCallMade:      firstCallMade,
-			Steps:              activationSteps(trialGranted, apiKeyCreated, firstCallMade),
+			Steps:              activationSteps(trialGranted, apiKeyCreated, runtimeActivated, firstCallMade),
 		},
 	}, nil
 }
@@ -348,6 +368,7 @@ func (s *consoleService) CreateAPIKey(ctx context.Context, user CurrentUser, inp
 	if err != nil {
 		return CreateAPIKeyResponse{}, mapConsoleRepositoryError(err)
 	}
+	s.syncAPIKeyRuntimeBestEffort(ctx, current.Workspace, created.APIKey)
 	return CreateAPIKeyResponse{
 		APIKey: apiKeyResponseFromDomain(created.APIKey),
 		Secret: created.Secret,
@@ -384,7 +405,25 @@ func (s *consoleService) updateAPIKeyStatus(ctx context.Context, user CurrentUse
 	if err != nil {
 		return APIKeyResponse{}, mapConsoleRepositoryError(err)
 	}
+	s.syncAPIKeyRuntimeBestEffort(ctx, current.Workspace, updated)
 	return apiKeyResponseFromDomain(updated), nil
+}
+
+func (s *consoleService) syncAPIKeyRuntimeBestEffort(ctx context.Context, workspace domain.Workspace, key domain.APIKey) {
+	if err := s.syncAPIKeyRuntime(ctx, workspace, key); err != nil {
+		log.Printf("portal api key runtime sync failed: workspace_id=%s api_key_id=%s err=%v", workspace.ID, key.ID, err)
+	}
+}
+
+func (s *consoleService) syncAPIKeyRuntime(ctx context.Context, workspace domain.Workspace, key domain.APIKey) error {
+	record, shouldUpsert := runtimeRecordFromAPIKey(workspace, key)
+	if shouldUpsert {
+		return s.runtimeSyncer.UpsertAPIKey(ctx, record)
+	}
+	if record.KeyHash == "" {
+		return nil
+	}
+	return s.runtimeSyncer.DeleteAPIKey(ctx, record.KeyHash)
 }
 
 func (s *consoleService) resolveWorkspace(ctx context.Context, user CurrentUser) (repository.CurrentWorkspaceResult, error) {
@@ -483,12 +522,17 @@ func workspaceResponseFromRepository(current repository.CurrentWorkspaceResult) 
 	}
 }
 
-func activationSteps(trialGranted bool, apiKeyCreated bool, firstCallMade bool) []ActivationStepResponse {
+func activationSteps(trialGranted bool, apiKeyCreated bool, runtimeActivated bool, firstCallMade bool) []ActivationStepResponse {
 	return []ActivationStepResponse{
 		{Key: "trial_credit", Label: "Receive trial credit", Status: activationStatus(trialGranted)},
 		{Key: "api_key", Label: "Create API key", Status: activationStatus(apiKeyCreated)},
+		{Key: "runtime_activation", Label: "Activate runtime access", Status: activationStatus(runtimeActivated)},
 		{Key: "first_call", Label: "Make first API call", Status: activationStatus(firstCallMade)},
 	}
+}
+
+func workspaceRuntimeActivated(workspace domain.Workspace) bool {
+	return workspace.TenantCode != nil && strings.TrimSpace(*workspace.TenantCode) != ""
 }
 
 func activationStatus(done bool) ActivationStepStatus {

@@ -171,6 +171,7 @@ export interface ActivationOverviewResponse {
   trial_credit_granted: boolean;
   trial_expires_at?: string;
   api_key_created: boolean;
+  runtime_activated: boolean;
   first_call_made: boolean;
   steps: ActivationStepResponse[];
 }
