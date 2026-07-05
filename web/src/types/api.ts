@@ -136,6 +136,58 @@ export interface BillingOverviewResponse {
   ledger_entries: LedgerEntryResponse[];
 }
 
+export interface UsageSummaryResponse {
+  data_source: "clickhouse";
+  available: boolean;
+  workspace_id: string;
+  today: UsageTodaySummary | null;
+  models: UsageModelSummary[];
+}
+
+export interface UsageTodaySummary {
+  request_count: number;
+  success_count: number;
+  error_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_creation_tokens: number;
+  cost_cny: string;
+  avg_latency_ms: number;
+  avg_ttft_ms: number;
+}
+
+export interface UsageModelSummary {
+  model: string;
+  request_count: number;
+  success_count: number;
+  error_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_cny: string;
+}
+
+export interface RequestLogsResponse {
+  logs: RequestLogResponse[];
+}
+
+export interface RequestLogResponse {
+  request_id: string;
+  time: string;
+  model: string;
+  api_key_id: string;
+  api_key_display: string;
+  status_code: number;
+  latency_ms: number;
+  ttft_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_creation_tokens: number;
+  cost_cny: string;
+  error_message: string;
+}
+
 export interface LedgerEntryResponse {
   id: string;
   type: "recharge" | "trial_grant" | "consumption" | "refund" | "adjustment";

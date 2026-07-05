@@ -33,6 +33,11 @@ PORTAL_INTERNAL_API_TOKEN=<shared internal token>
 PORTAL_GATEWAY_REDIS_ADDR=<redis host:port>
 PORTAL_GATEWAY_REDIS_PASSWORD=<redis password if any>
 PORTAL_GATEWAY_REDIS_DB=<redis db>
+PORTAL_USAGE_CLICKHOUSE_ENABLED=<true to enable Portal usage pages>
+PORTAL_CLICKHOUSE_ADDR=<clickhouse host:port>
+PORTAL_CLICKHOUSE_DATABASE=tokenlive_gateway
+PORTAL_CLICKHOUSE_USERNAME=<clickhouse user>
+PORTAL_CLICKHOUSE_PASSWORD=<clickhouse password if any>
 ```
 
 Admin:

@@ -14,6 +14,7 @@ import (
 	"github.com/tokenlive/tokenlive-portal/backend/internal/config"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/database"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/repository"
+	"github.com/tokenlive/tokenlive-portal/backend/internal/usage"
 	"gorm.io/gorm"
 )
 
@@ -33,7 +34,8 @@ var (
 	}
 	newPortalRepositories           = repository.New
 	newPortalAuthService            = api.NewAuthService
-	newPortalConsoleService         = api.NewConsoleServiceWithRuntimeSyncer
+	newPortalConsoleService         = api.NewConsoleServiceWithRuntimeSyncerAndUsage
+	newPortalUsageReader            = usage.NewClickHouseReader
 	newPortalAPIKeyRuntimeSyncer    = newAPIKeyRuntimeSyncer
 	registerPortalPublicModelRoutes = api.RegisterPublicModelRoutes
 	registerPortalAuthRoutes        = api.RegisterAuthRoutes
@@ -133,15 +135,31 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 		cleanup()
 	}
 
-	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth, cfg.GitHubOAuth)
+	usageReader, closeUsageReader, err := newPortalUsageReader(cfg.ClickHouse)
 	if err != nil {
 		cleanupWithRuntime()
+		return nil, fmt.Errorf("create usage reader: %w", err)
+	}
+
+	cleanupWithUsage := func() {
+		if closeUsageReader != nil {
+			if err := closeUsageReader(); err != nil {
+				logger.Printf("portal-api usage reader close failed: %v", err)
+			}
+		}
+		cleanupWithRuntime()
+	}
+
+	authService, err := newPortalAuthService(modelRepository, cfg.Env, cfg.AuthPepper, cfg.TrialCredit, cfg.GoogleOAuth, cfg.GitHubOAuth)
+	if err != nil {
+		cleanupWithUsage()
 		return nil, fmt.Errorf("create auth service: %w", err)
 	}
 
-	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper, cfg.TrialCredit, apiKeyRuntimeSyncer)
+	usageService := usage.NewService(usageReader, func() time.Time { return time.Now().UTC() })
+	consoleService, err := newPortalConsoleService(modelRepository, cfg.AuthPepper, cfg.TrialCredit, apiKeyRuntimeSyncer, usageService)
 	if err != nil {
-		cleanupWithRuntime()
+		cleanupWithUsage()
 		return nil, fmt.Errorf("create console service: %w", err)
 	}
 
@@ -151,7 +169,7 @@ func registerDatabaseBackedRoutes(mux *http.ServeMux, cfg config.Config, logger 
 	registerPortalConsoleRoutes(mux, consoleService, authService)
 	api.RegisterInternalRoutes(mux, modelRepository, cfg.InternalAPIToken, apiKeyRuntimeSyncer)
 
-	return cleanupWithRuntime, nil
+	return cleanupWithUsage, nil
 }
 
 func newAPIKeyRuntimeSyncer(cfg config.GatewayRedisConfig) (api.APIKeyRuntimeSyncer, func() error, error) {

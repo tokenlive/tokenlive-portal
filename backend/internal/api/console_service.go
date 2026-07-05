@@ -12,6 +12,7 @@ import (
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/money"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/repository"
+	"github.com/tokenlive/tokenlive-portal/backend/internal/usage"
 )
 
 const (
@@ -39,6 +40,8 @@ type ConsoleService interface {
 	Overview(ctx context.Context, user CurrentUser) (ConsoleOverviewResponse, error)
 	CurrentWorkspace(ctx context.Context, user CurrentUser) (CurrentWorkspaceResponse, error)
 	BillingOverview(ctx context.Context, user CurrentUser) (BillingOverviewResponse, error)
+	UsageSummary(ctx context.Context, user CurrentUser) (usage.SummaryResponse, error)
+	RequestLogs(ctx context.Context, user CurrentUser, limit int) (usage.RequestLogsResponse, error)
 	CreateRechargeRequest(ctx context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error)
 	ListAPIKeys(ctx context.Context, user CurrentUser) (ListAPIKeysResponse, error)
 	CreateAPIKey(ctx context.Context, user CurrentUser, input CreateAPIKeyRequest) (CreateAPIKeyResponse, error)
@@ -197,6 +200,7 @@ type consoleService struct {
 	authPepper    string
 	trialCredit   config.TrialCreditConfig
 	runtimeSyncer APIKeyRuntimeSyncer
+	usageService  *usage.Service
 	nowFunc       func() time.Time
 }
 
@@ -205,11 +209,18 @@ func newConsoleService(store consoleStore, authPepper string, trialCredit config
 }
 
 func newConsoleServiceWithRuntimeSyncer(store consoleStore, authPepper string, trialCredit config.TrialCreditConfig, runtimeSyncer APIKeyRuntimeSyncer) (*consoleService, error) {
+	return newConsoleServiceWithRuntimeSyncerAndUsage(store, authPepper, trialCredit, runtimeSyncer, usage.NewService(usage.DisabledReader{}, nil))
+}
+
+func newConsoleServiceWithRuntimeSyncerAndUsage(store consoleStore, authPepper string, trialCredit config.TrialCreditConfig, runtimeSyncer APIKeyRuntimeSyncer, usageService *usage.Service) (*consoleService, error) {
 	if store == nil {
 		return nil, errors.New("console store is required")
 	}
 	if runtimeSyncer == nil {
 		return nil, errors.New("api key runtime syncer is required")
+	}
+	if usageService == nil {
+		usageService = usage.NewService(usage.DisabledReader{}, nil)
 	}
 	if strings.TrimSpace(authPepper) == "" {
 		return nil, errors.New("auth pepper must not be empty")
@@ -225,6 +236,7 @@ func newConsoleServiceWithRuntimeSyncer(store consoleStore, authPepper string, t
 		authPepper:    authPepper,
 		trialCredit:   trialCredit,
 		runtimeSyncer: runtimeSyncer,
+		usageService:  usageService,
 		nowFunc:       func() time.Time { return time.Now().UTC() },
 	}, nil
 }
@@ -241,6 +253,13 @@ func NewConsoleServiceWithRuntimeSyncer(repos *repository.Repositories, authPepp
 		return nil, errors.New("console repositories are required")
 	}
 	return newConsoleServiceWithRuntimeSyncer(repos, authPepper, trialCredit, runtimeSyncer)
+}
+
+func NewConsoleServiceWithRuntimeSyncerAndUsage(repos *repository.Repositories, authPepper string, trialCredit config.TrialCreditConfig, runtimeSyncer APIKeyRuntimeSyncer, usageService *usage.Service) (ConsoleService, error) {
+	if repos == nil {
+		return nil, errors.New("console repositories are required")
+	}
+	return newConsoleServiceWithRuntimeSyncerAndUsage(repos, authPepper, trialCredit, runtimeSyncer, usageService)
 }
 
 func (s *consoleService) Overview(ctx context.Context, user CurrentUser) (ConsoleOverviewResponse, error) {
@@ -311,6 +330,22 @@ func (s *consoleService) BillingOverview(ctx context.Context, user CurrentUser) 
 		resp.LedgerEntries = append(resp.LedgerEntries, ledgerEntryResponseFromDomain(entry))
 	}
 	return resp, nil
+}
+
+func (s *consoleService) UsageSummary(ctx context.Context, user CurrentUser) (usage.SummaryResponse, error) {
+	current, err := s.resolveWorkspace(ctx, user)
+	if err != nil {
+		return usage.SummaryResponse{}, err
+	}
+	return s.usageService.Summary(ctx, current.Workspace.ID)
+}
+
+func (s *consoleService) RequestLogs(ctx context.Context, user CurrentUser, limit int) (usage.RequestLogsResponse, error) {
+	current, err := s.resolveWorkspace(ctx, user)
+	if err != nil {
+		return usage.RequestLogsResponse{}, err
+	}
+	return s.usageService.RecentLogs(ctx, current.Workspace.ID, limit)
 }
 
 func (s *consoleService) CreateRechargeRequest(ctx context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error) {

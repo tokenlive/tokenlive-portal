@@ -191,3 +191,41 @@ func TestLoadGatewayRedisRejectsInvalidDB(t *testing.T) {
 		t.Fatalf("Load() err = %v, want gateway redis db error", err)
 	}
 }
+
+func TestLoadClickHouseUsageConfig(t *testing.T) {
+	t.Setenv("PORTAL_USAGE_CLICKHOUSE_ENABLED", "true")
+	t.Setenv("PORTAL_CLICKHOUSE_ADDR", " ch1:9000, ch2:9000 ")
+	t.Setenv("PORTAL_CLICKHOUSE_DATABASE", " portal_usage ")
+	t.Setenv("PORTAL_CLICKHOUSE_USERNAME", " user ")
+	t.Setenv("PORTAL_CLICKHOUSE_PASSWORD", " secret ")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+	if !got.ClickHouse.Enabled {
+		t.Fatalf("ClickHouse should be enabled")
+	}
+	if len(got.ClickHouse.Addr) != 2 || got.ClickHouse.Addr[0] != "ch1:9000" || got.ClickHouse.Addr[1] != "ch2:9000" {
+		t.Fatalf("ClickHouse addr = %#v", got.ClickHouse.Addr)
+	}
+	if got.ClickHouse.Database != "portal_usage" || got.ClickHouse.Username != "user" || got.ClickHouse.Password != "secret" {
+		t.Fatalf("ClickHouse config = %+v", got.ClickHouse)
+	}
+}
+
+func TestLoadClickHouseUsageConfigDisabledByDefault(t *testing.T) {
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+	if got.ClickHouse.Enabled {
+		t.Fatalf("ClickHouse should be disabled by default")
+	}
+	if got.ClickHouse.Database != "tokenlive_gateway" {
+		t.Fatalf("ClickHouse database = %q, want tokenlive_gateway", got.ClickHouse.Database)
+	}
+	if got.ClickHouse.Username != "default" {
+		t.Fatalf("ClickHouse username = %q, want default", got.ClickHouse.Username)
+	}
+}

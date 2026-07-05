@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,8 @@ func RegisterConsoleRoutes(mux *http.ServeMux, service ConsoleService, auth Auth
 	mux.HandleFunc("GET /api/console/overview", handler.Overview)
 	mux.HandleFunc("GET /api/workspaces/current", handler.CurrentWorkspace)
 	mux.HandleFunc("GET /api/billing/overview", handler.BillingOverview)
+	mux.HandleFunc("GET /api/usage/summary", handler.UsageSummary)
+	mux.HandleFunc("GET /api/request-logs", handler.RequestLogs)
 	mux.HandleFunc("POST /api/billing/recharge-requests", handler.CreateRechargeRequest)
 	mux.HandleFunc("GET /api/api-keys", handler.ListAPIKeys)
 	mux.HandleFunc("POST /api/api-keys", handler.CreateAPIKey)
@@ -71,6 +74,42 @@ func (h ConsoleHandler) BillingOverview(w http.ResponseWriter, r *http.Request) 
 	}
 
 	result, err := h.service.BillingOverview(r.Context(), user)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h ConsoleHandler) UsageSummary(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := h.service.UsageSummary(r.Context(), user)
+	if err != nil {
+		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h ConsoleHandler) RequestLogs(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	result, err := h.service.RequestLogs(r.Context(), user, limit)
 	if err != nil {
 		WriteError(w, RequestIDFromContext(r.Context()), mapConsoleError(err))
 		return

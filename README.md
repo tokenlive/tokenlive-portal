@@ -25,6 +25,8 @@ tokenlive-portal/
 - 模型详情查看
 - 仪表板概览
 - API Keys 管理
+- 用量与请求日志查看
+- 账单与充值请求
 - 账户设置
 
 ### 界面设计
@@ -79,6 +81,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 - `/accept-terms` - 接受服务条款
 - `/console/dashboard` - 控制台仪表板
 - `/console/api-keys` - API Keys 管理
+- `/console/usage` - 用量与请求日志
+- `/console/billing` - 账单与充值请求
 - `/console/settings` - 账户设置
 
 ## 技术栈

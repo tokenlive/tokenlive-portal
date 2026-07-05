@@ -11,6 +11,7 @@ import (
 
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/security"
+	"github.com/tokenlive/tokenlive-portal/backend/internal/usage"
 )
 
 func TestConsoleCurrentWorkspaceRequiresSession(t *testing.T) {
@@ -240,6 +241,106 @@ func TestConsoleBillingOverviewReturnsRechargeRequests(t *testing.T) {
 	}
 	if console.billingOverviewUser.ID != "usr_1" {
 		t.Fatalf("billing overview user id = %q, want usr_1", console.billingOverviewUser.ID)
+	}
+}
+
+func TestConsoleUsageSummaryRequiresSession(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, &fakeConsoleService{}, &fakeAuthService{})
+	req := httptest.NewRequest(http.MethodGet, "/api/usage/summary", nil)
+	req.Header.Set("X-Request-ID", "req_usage_session")
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	assertAuthErrorResponse(t, rec, string(CodeAuthSessionRequired), "req_usage_session")
+}
+
+func TestConsoleUsageSummaryReturnsClickHouseUsage(t *testing.T) {
+	t.Parallel()
+
+	console := &fakeConsoleService{
+		usageSummaryResult: usage.SummaryResponse{
+			DataSource:  "clickhouse",
+			Available:   true,
+			WorkspaceID: "wsp_1",
+			Today: &usage.TodaySummary{
+				RequestCount: 42,
+				SuccessCount: 40,
+				ErrorCount:   2,
+				CostCNY:      "1.230000000",
+			},
+		},
+	}
+	auth := &fakeAuthService{currentUser: CurrentUser{ID: "usr_1"}}
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, console, auth)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/usage/summary", nil)
+	req.AddCookie(&http.Cookie{Name: security.SessionCookieName, Value: "tl_sess_test"})
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body usage.SummaryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !body.Available || body.WorkspaceID != "wsp_1" || body.Today == nil || body.Today.RequestCount != 42 {
+		t.Fatalf("body = %+v", body)
+	}
+	if console.usageSummaryUser.ID != "usr_1" {
+		t.Fatalf("usage summary user id = %q, want usr_1", console.usageSummaryUser.ID)
+	}
+}
+
+func TestConsoleRequestLogsPassesLimit(t *testing.T) {
+	t.Parallel()
+
+	loggedAt := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+	console := &fakeConsoleService{
+		requestLogsResult: usage.RequestLogsResponse{
+			Logs: []usage.RequestLogResponse{{
+				RequestID:     "req_1",
+				Time:          loggedAt,
+				Model:         "gpt-4o",
+				APIKeyID:      "ak_1",
+				APIKeyDisplay: "tl_l***1234",
+				StatusCode:    200,
+				LatencyMs:     321,
+			}},
+		},
+	}
+	auth := &fakeAuthService{currentUser: CurrentUser{ID: "usr_1"}}
+	mux := http.NewServeMux()
+	RegisterConsoleRoutes(mux, console, auth)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/request-logs?limit=25", nil)
+	req.AddCookie(&http.Cookie{Name: security.SessionCookieName, Value: "tl_sess_test"})
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if console.requestLogsLimit != 25 {
+		t.Fatalf("request logs limit = %d, want 25", console.requestLogsLimit)
+	}
+	var body usage.RequestLogsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Logs) != 1 || body.Logs[0].RequestID != "req_1" || body.Logs[0].APIKeyDisplay != "tl_l***1234" {
+		t.Fatalf("body = %+v", body)
 	}
 }
 
@@ -494,6 +595,13 @@ type fakeConsoleService struct {
 	billingOverviewResult       BillingOverviewResponse
 	billingOverviewErr          error
 	billingOverviewUser         CurrentUser
+	usageSummaryResult          usage.SummaryResponse
+	usageSummaryErr             error
+	usageSummaryUser            CurrentUser
+	requestLogsResult           usage.RequestLogsResponse
+	requestLogsErr              error
+	requestLogsUser             CurrentUser
+	requestLogsLimit            int
 	createRechargeRequestInput  CreateRechargeRequestRequest
 	createRechargeRequestUser   CurrentUser
 	createRechargeRequestResult CreateRechargeRequestResponse
@@ -522,6 +630,17 @@ func (f *fakeConsoleService) CurrentWorkspace(_ context.Context, _ CurrentUser) 
 func (f *fakeConsoleService) BillingOverview(_ context.Context, user CurrentUser) (BillingOverviewResponse, error) {
 	f.billingOverviewUser = user
 	return f.billingOverviewResult, f.billingOverviewErr
+}
+
+func (f *fakeConsoleService) UsageSummary(_ context.Context, user CurrentUser) (usage.SummaryResponse, error) {
+	f.usageSummaryUser = user
+	return f.usageSummaryResult, f.usageSummaryErr
+}
+
+func (f *fakeConsoleService) RequestLogs(_ context.Context, user CurrentUser, limit int) (usage.RequestLogsResponse, error) {
+	f.requestLogsUser = user
+	f.requestLogsLimit = limit
+	return f.requestLogsResult, f.requestLogsErr
 }
 
 func (f *fakeConsoleService) CreateRechargeRequest(_ context.Context, user CurrentUser, input CreateRechargeRequestRequest) (CreateRechargeRequestResponse, error) {

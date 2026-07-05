@@ -14,6 +14,7 @@ import (
 	"github.com/tokenlive/tokenlive-portal/backend/internal/config"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/repository"
+	"github.com/tokenlive/tokenlive-portal/backend/internal/usage"
 	"gorm.io/gorm"
 )
 
@@ -94,6 +95,8 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 		{method: http.MethodGet, path: "/api/workspaces/current"},
 		{method: http.MethodGet, path: "/api/api-keys"},
 		{method: http.MethodGet, path: "/api/billing/overview"},
+		{method: http.MethodGet, path: "/api/usage/summary"},
+		{method: http.MethodGet, path: "/api/request-logs"},
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest(tt.method, tt.path, nil)
@@ -126,6 +129,12 @@ func TestRegisterDatabaseBackedRoutesRegistersPublicAuthAndConsoleRoutes(t *test
 	if !capturedPortalConsoleRuntimeSyncer {
 		t.Fatalf("console service did not receive runtime syncer")
 	}
+	if !capturedPortalUsageReaderCreated {
+		t.Fatalf("usage reader was not created")
+	}
+	if !capturedPortalConsoleUsageService {
+		t.Fatalf("console service did not receive usage service")
+	}
 }
 
 func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *testing.T) {
@@ -139,7 +148,7 @@ func TestRegisterDatabaseBackedRoutesDoesNotMutateMuxWhenConsoleServiceFails(t *
 			return nil
 		}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.TrialCreditConfig, _ api.APIKeyRuntimeSyncer) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, _ config.TrialCreditConfig, _ api.APIKeyRuntimeSyncer, _ *usage.Service) (api.ConsoleService, error) {
 		return nil, errors.New("console constructor failed")
 	}
 
@@ -179,6 +188,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	originalNewRepositories := newPortalRepositories
 	originalNewAuthService := newPortalAuthService
 	originalNewConsoleService := newPortalConsoleService
+	originalNewUsageReader := newPortalUsageReader
 	originalNewAPIKeyRuntimeSyncer := newPortalAPIKeyRuntimeSyncer
 	originalRegisterPublicModelRoutes := registerPortalPublicModelRoutes
 	originalRegisterAuthRoutes := registerPortalAuthRoutes
@@ -195,6 +205,12 @@ func stubPortalRouteSeams(t *testing.T) func() {
 	capturedPortalConsoleTrialCredit = config.TrialCreditConfig{}
 	capturedGatewayRedisConfig = config.GatewayRedisConfig{}
 	capturedPortalConsoleRuntimeSyncer = false
+	capturedPortalUsageReaderCreated = false
+	capturedPortalConsoleUsageService = false
+	newPortalUsageReader = func(_ config.ClickHouseConfig) (usage.Reader, func() error, error) {
+		capturedPortalUsageReaderCreated = true
+		return usage.DisabledReader{}, func() error { return nil }, nil
+	}
 	newPortalAPIKeyRuntimeSyncer = func(cfg config.GatewayRedisConfig) (api.APIKeyRuntimeSyncer, func() error, error) {
 		capturedGatewayRedisConfig = cfg
 		return fakePortalAPIKeyRuntimeSyncer{}, func() error { return nil }, nil
@@ -204,9 +220,10 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		capturedPortalGitHubOAuth = githubOAuth
 		return fakePortalAuthService{}, nil
 	}
-	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig, runtimeSyncer api.APIKeyRuntimeSyncer) (api.ConsoleService, error) {
+	newPortalConsoleService = func(_ *repository.Repositories, _ string, trialCredit config.TrialCreditConfig, runtimeSyncer api.APIKeyRuntimeSyncer, usageService *usage.Service) (api.ConsoleService, error) {
 		capturedPortalConsoleTrialCredit = trialCredit
 		capturedPortalConsoleRuntimeSyncer = runtimeSyncer != nil
+		capturedPortalConsoleUsageService = usageService != nil
 		return fakePortalConsoleService{}, nil
 	}
 	registerPortalPublicModelRoutes = func(mux *http.ServeMux, _ api.PublicModelReader) {
@@ -234,6 +251,12 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		mux.HandleFunc("GET /api/billing/overview", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		})
+		mux.HandleFunc("GET /api/usage/summary", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+		mux.HandleFunc("GET /api/request-logs", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
 	}
 
 	return func() {
@@ -241,6 +264,7 @@ func stubPortalRouteSeams(t *testing.T) func() {
 		newPortalRepositories = originalNewRepositories
 		newPortalAuthService = originalNewAuthService
 		newPortalConsoleService = originalNewConsoleService
+		newPortalUsageReader = originalNewUsageReader
 		newPortalAPIKeyRuntimeSyncer = originalNewAPIKeyRuntimeSyncer
 		registerPortalPublicModelRoutes = originalRegisterPublicModelRoutes
 		registerPortalAuthRoutes = originalRegisterAuthRoutes
@@ -254,6 +278,8 @@ var capturedPortalConsoleTrialCredit config.TrialCreditConfig
 var capturedPortalGitHubOAuth config.GitHubOAuthConfig
 var capturedGatewayRedisConfig config.GatewayRedisConfig
 var capturedPortalConsoleRuntimeSyncer bool
+var capturedPortalUsageReaderCreated bool
+var capturedPortalConsoleUsageService bool
 
 type fakePortalAPIKeyRuntimeSyncer struct{}
 
@@ -316,6 +342,14 @@ func (fakePortalConsoleService) CurrentWorkspace(context.Context, api.CurrentUse
 
 func (fakePortalConsoleService) BillingOverview(context.Context, api.CurrentUser) (api.BillingOverviewResponse, error) {
 	return api.BillingOverviewResponse{}, nil
+}
+
+func (fakePortalConsoleService) UsageSummary(context.Context, api.CurrentUser) (usage.SummaryResponse, error) {
+	return usage.SummaryResponse{}, nil
+}
+
+func (fakePortalConsoleService) RequestLogs(context.Context, api.CurrentUser, int) (usage.RequestLogsResponse, error) {
+	return usage.RequestLogsResponse{}, nil
 }
 
 func (fakePortalConsoleService) CreateRechargeRequest(context.Context, api.CurrentUser, api.CreateRechargeRequestRequest) (api.CreateRechargeRequestResponse, error) {

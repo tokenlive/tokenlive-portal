@@ -7,6 +7,8 @@ import type {
   AcceptTermsResult,
   ConsoleOverviewResponse,
   BillingOverviewResponse,
+  UsageSummaryResponse,
+  RequestLogsResponse,
   ListAPIKeysResponse,
   CreateAPIKeyResponse,
   CreateAPIKeyRequest,
@@ -108,6 +110,14 @@ export async function fetchOverview(): Promise<ConsoleOverviewResponse> {
 
 export async function fetchBillingOverview(): Promise<BillingOverviewResponse> {
   return request<BillingOverviewResponse>("/api/billing/overview");
+}
+
+export async function fetchUsageSummary(): Promise<UsageSummaryResponse> {
+  return request<UsageSummaryResponse>("/api/usage/summary");
+}
+
+export async function fetchRequestLogs(limit = 50): Promise<RequestLogsResponse> {
+  return request<RequestLogsResponse>(`/api/request-logs?limit=${limit}`);
 }
 
 export async function createRechargeRequest(

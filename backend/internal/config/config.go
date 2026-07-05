@@ -20,6 +20,7 @@ type Config struct {
 	InternalAPIToken string
 	TrialCredit      TrialCreditConfig
 	GatewayRedis     GatewayRedisConfig
+	ClickHouse       ClickHouseConfig
 	GoogleOAuth      GoogleOAuthConfig
 	GitHubOAuth      GitHubOAuthConfig
 }
@@ -59,6 +60,14 @@ func (c GatewayRedisConfig) Enabled() bool {
 	return c.Addr != ""
 }
 
+type ClickHouseConfig struct {
+	Enabled  bool
+	Addr     []string
+	Database string
+	Username string
+	Password string
+}
+
 func Load() (Config, error) {
 	env := normalizeEnv(envOrDefault("PORTAL_ENV", "development"))
 	authPepper := os.Getenv("PORTAL_AUTH_PEPPER")
@@ -88,9 +97,29 @@ func Load() (Config, error) {
 		InternalAPIToken: internalAPIToken,
 		TrialCredit:      trialCredit,
 		GatewayRedis:     gatewayRedis,
+		ClickHouse:       loadClickHouseConfig(),
 		GoogleOAuth:      loadGoogleOAuthConfig(),
 		GitHubOAuth:      loadGitHubOAuthConfig(),
 	}, nil
+}
+
+func loadClickHouseConfig() ClickHouseConfig {
+	addrRaw := strings.TrimSpace(os.Getenv("PORTAL_CLICKHOUSE_ADDR"))
+	addr := make([]string, 0)
+	for _, part := range strings.Split(addrRaw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			addr = append(addr, part)
+		}
+	}
+
+	return ClickHouseConfig{
+		Enabled:  normalizeEnv(os.Getenv("PORTAL_USAGE_CLICKHOUSE_ENABLED")) == "true",
+		Addr:     addr,
+		Database: strings.TrimSpace(envOrDefault("PORTAL_CLICKHOUSE_DATABASE", "tokenlive_gateway")),
+		Username: strings.TrimSpace(envOrDefault("PORTAL_CLICKHOUSE_USERNAME", "default")),
+		Password: strings.TrimSpace(os.Getenv("PORTAL_CLICKHOUSE_PASSWORD")),
+	}
 }
 
 func loadGoogleOAuthConfig() GoogleOAuthConfig {

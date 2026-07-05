@@ -3,13 +3,21 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CircleGauge, CreditCard, KeyRound, Power, Settings } from "lucide-react";
+import {
+  Activity,
+  CircleGauge,
+  CreditCard,
+  KeyRound,
+  Power,
+  Settings,
+} from "lucide-react";
 import { getMe, logout } from "@/lib/api";
 import { getConsoleAuthRedirect } from "@/lib/auth-flow";
 
 const NAV_ITEMS = [
   { href: "/console/dashboard", label: "Overview", icon: CircleGauge },
   { href: "/console/api-keys", label: "API Keys", icon: KeyRound },
+  { href: "/console/usage", label: "Usage", icon: Activity },
   { href: "/console/billing", label: "Billing", icon: CreditCard },
   { href: "/console/settings", label: "Settings", icon: Settings },
 ];
