@@ -38,21 +38,21 @@ CREATE TABLE model_price_versions (
     id VARCHAR(32) PRIMARY KEY,
     model_id VARCHAR(191) NOT NULL,
     currency VARCHAR(8) NOT NULL,
-    input_micro_cny_per_1m_tokens BIGINT NOT NULL,
-    output_micro_cny_per_1m_tokens BIGINT NOT NULL,
-    cache_read_micro_cny_per_1m_tokens BIGINT NULL,
+    input_price DECIMAL(18,9) NOT NULL,
+    output_price DECIMAL(18,9) NOT NULL,
+    cached_price DECIMAL(18,9) NULL,
+    cache_creation_price DECIMAL(18,9) NULL,
     effective_from DATETIME(3) NOT NULL,
     effective_until DATETIME(3) NULL,
     status VARCHAR(32) NOT NULL,
-    published_by_user_id VARCHAR(32) NULL,
     published_at DATETIME(3) NOT NULL,
     UNIQUE KEY uk_model_price_versions_model_effective (model_id, effective_from),
     KEY idx_model_price_versions_current (model_id, status, effective_from, effective_until),
     CONSTRAINT fk_model_price_versions_model FOREIGN KEY (model_id) REFERENCES model_catalogs(model_id),
-    CONSTRAINT fk_model_price_versions_published_by FOREIGN KEY (published_by_user_id) REFERENCES users(id),
-    CONSTRAINT chk_model_price_versions_input_nonnegative CHECK (input_micro_cny_per_1m_tokens >= 0),
-    CONSTRAINT chk_model_price_versions_output_nonnegative CHECK (output_micro_cny_per_1m_tokens >= 0),
-    CONSTRAINT chk_model_price_versions_cache_nonnegative CHECK (cache_read_micro_cny_per_1m_tokens IS NULL OR cache_read_micro_cny_per_1m_tokens >= 0)
+    CONSTRAINT chk_model_price_versions_input_nonnegative CHECK (input_price >= 0),
+    CONSTRAINT chk_model_price_versions_output_nonnegative CHECK (output_price >= 0),
+    CONSTRAINT chk_model_price_versions_cache_nonnegative CHECK (cached_price IS NULL OR cached_price >= 0),
+    CONSTRAINT chk_model_price_versions_cache_creation_nonnegative CHECK (cache_creation_price IS NULL OR cache_creation_price >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE model_service_metrics (

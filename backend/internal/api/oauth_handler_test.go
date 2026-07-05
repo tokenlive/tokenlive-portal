@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,29 @@ func TestGitHubLoginRedirectsToProvider(t *testing.T) {
 	assertOAuthCookiePath(t, rec, "/api/auth/github/")
 }
 
+func TestGoogleLoginReturnsOAuthNotConfiguredWhenProviderURLIsMissing(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	RegisterOAuthRoutes(mux, &fakeOAuthRouteService{}, "development")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/google/login", nil)
+	rec := httptest.NewRecorder()
+
+	RequestID(mux).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	var body errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error.Code != CodeAuthOAuthNotConfigured {
+		t.Fatalf("code = %q, want %q", body.Error.Code, CodeAuthOAuthNotConfigured)
+	}
+}
+
 func TestGitHubCallbackCreatesSession(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +86,9 @@ func TestGitHubCallbackCreatesSession(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `code: "success"`) {
 		t.Fatalf("callback html = %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `window.opener.postMessage(msg, "*")`) {
+		t.Fatalf("callback html should post message to opener across frontend/API origins: %s", rec.Body.String())
 	}
 
 	var sessionCookie *http.Cookie

@@ -60,7 +60,7 @@ func (h OAuthHandler) StartGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	h.setOAuthStateCookie(w, state, false, "/api/auth/google/")
 	authURL := h.service.GetGoogleAuthURL(state)
 	if authURL == "" {
-		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthNotConfigured)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h OAuthHandler) StartGoogleBind(w http.ResponseWriter, r *http.Request) {
 	h.setOAuthStateCookie(w, state, true, "/api/auth/google/")
 	authURL := h.service.GetGoogleAuthURL(state)
 	if authURL == "" {
-		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthNotConfigured)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (h OAuthHandler) StartGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	h.setOAuthStateCookie(w, state, false, "/api/auth/github/")
 	authURL := h.service.GetGitHubAuthURL(state)
 	if authURL == "" {
-		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthNotConfigured)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (h OAuthHandler) StartGitHubBind(w http.ResponseWriter, r *http.Request) {
 	h.setOAuthStateCookie(w, state, true, "/api/auth/github/")
 	authURL := h.service.GetGitHubAuthURL(state)
 	if authURL == "" {
-		WriteError(w, RequestIDFromContext(r.Context()), ErrInternalError)
+		WriteError(w, RequestIDFromContext(r.Context()), ErrOAuthNotConfigured)
 		return
 	}
 
@@ -412,7 +412,7 @@ func writeOAuthCallbackHTML(w http.ResponseWriter, success bool, code string, pr
     provider: "` + provider + `"
   };
   if (window.opener && !window.opener.closed) {
-    window.opener.postMessage(msg, window.location.origin);
+    window.opener.postMessage(msg, "*");
     window.close();
   } else {
     // 没有 opener（非 popup 模式），向 parent 发送消息
@@ -444,7 +444,7 @@ func mapOAuthError(err error) AppError {
 	case errors.Is(err, ErrAuthTermsAlreadyAccepted):
 		return ErrTermsRequired
 	case errors.Is(err, ErrAuthOAuthNotConfigured):
-		return ErrInternalError
+		return ErrOAuthNotConfigured
 	case errors.Is(err, ErrAuthSessionRequired):
 		return ErrSessionRequired
 	case errors.Is(err, ErrAuthSessionExpired):

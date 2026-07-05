@@ -310,7 +310,6 @@ type ModelPriceVersion struct {
 	EffectiveFrom      time.Time        `gorm:"not null;uniqueIndex:uk_model_price_versions_model_effective,priority:2;index:idx_model_price_versions_current,priority:3"`
 	EffectiveUntil     *time.Time       `gorm:"index:idx_model_price_versions_current,priority:4"`
 	Status             ModelPriceStatus `gorm:"size:32;not null;index:idx_model_price_versions_current,priority:2"`
-	PublishedByUserID  *string          `gorm:"size:32"`
 	PublishedAt        time.Time        `gorm:"not null"`
 }
 

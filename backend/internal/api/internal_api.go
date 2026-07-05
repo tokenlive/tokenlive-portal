@@ -12,6 +12,7 @@ import (
 
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"github.com/tokenlive/tokenlive-portal/backend/internal/repository"
+	"gorm.io/datatypes"
 )
 
 type UserSearchResult struct {
@@ -55,12 +56,60 @@ type BindTenantRequest struct {
 	TenantCode string `json:"tenant_code"`
 }
 
+type PublishModelCatalogInput = repository.PublishModelCatalogInput
+
+type PublishModelCatalogRequest struct {
+	Catalog publishModelCatalogCatalogRequest `json:"catalog"`
+	I18n    []publishModelCatalogI18nRequest  `json:"i18n"`
+	Prices  []publishModelPriceVersionRequest `json:"prices"`
+}
+
+type publishModelCatalogCatalogRequest struct {
+	ModelID          string                        `json:"model_id"`
+	Slug             string                        `json:"slug"`
+	Status           domain.ModelCatalogStatus     `json:"status"`
+	Visibility       domain.ModelCatalogVisibility `json:"visibility"`
+	LogoURL          string                        `json:"logo_url"`
+	ContextLength    *int64                        `json:"context_length"`
+	KnowledgeCutoff  *time.Time                    `json:"knowledge_cutoff"`
+	InputModalities  []string                      `json:"input_modalities"`
+	OutputModalities []string                      `json:"output_modalities"`
+	Capabilities     []string                      `json:"capabilities"`
+	Featured         bool                          `json:"featured"`
+	SortWeight       int64                         `json:"sort_weight"`
+	PublishedAt      *time.Time                    `json:"published_at"`
+}
+
+type publishModelCatalogI18nRequest struct {
+	Locale           string   `json:"locale"`
+	DisplayName      string   `json:"display_name"`
+	ShortDescription string   `json:"short_description"`
+	LongDescription  *string  `json:"long_description"`
+	SEOTitle         string   `json:"seo_title"`
+	SEODescription   string   `json:"seo_description"`
+	Tags             []string `json:"tags"`
+}
+
+type publishModelPriceVersionRequest struct {
+	ID                 string                  `json:"id"`
+	Currency           string                  `json:"currency"`
+	InputPrice         float64                 `json:"input_price"`
+	OutputPrice        float64                 `json:"output_price"`
+	CachedPrice        *float64                `json:"cached_price"`
+	CacheCreationPrice *float64                `json:"cache_creation_price"`
+	EffectiveFrom      time.Time               `json:"effective_from"`
+	EffectiveUntil     *time.Time              `json:"effective_until"`
+	Status             domain.ModelPriceStatus `json:"status"`
+	PublishedAt        time.Time               `json:"published_at"`
+}
+
 type internalRoutesStore interface {
 	SearchUsers(ctx context.Context, keyword string, limit int) ([]domain.User, error)
 	SearchWorkspaces(ctx context.Context, keyword string, limit int) ([]domain.Workspace, error)
 	BindTenantCode(ctx context.Context, id string, tenantCode *string) error
 	FindWorkspaceByID(ctx context.Context, id string) (domain.Workspace, error)
 	ListAPIKeysByWorkspace(ctx context.Context, workspaceID string) ([]domain.APIKey, error)
+	PublishModelCatalog(ctx context.Context, input repository.PublishModelCatalogInput) error
 }
 
 func RegisterInternalRoutes(mux *http.ServeMux, store internalRoutesStore, internalToken string, runtimeSyncers ...APIKeyRuntimeSyncer) {
@@ -245,6 +294,133 @@ func RegisterInternalRoutes(mux *http.ServeMux, store internalRoutesStore, inter
 
 		w.WriteHeader(http.StatusNoContent)
 	})
+
+	mux.HandleFunc("POST /internal/v1/model-catalogs/publish", func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if !authorizeInternalRequest(w, r, internalToken) {
+			return
+		}
+
+		var req PublishModelCatalogRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			WriteError(w, requestID, ErrInvalidRequest)
+			return
+		}
+
+		input, err := publishModelCatalogInputFromRequest(req)
+		if err != nil {
+			WriteError(w, requestID, ErrInvalidRequest)
+			return
+		}
+
+		if err := store.PublishModelCatalog(r.Context(), input); err != nil {
+			WriteError(w, requestID, ErrInternalError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+func publishModelCatalogInputFromRequest(req PublishModelCatalogRequest) (repository.PublishModelCatalogInput, error) {
+	now := time.Now().UTC()
+	modelID := strings.TrimSpace(req.Catalog.ModelID)
+	slug := strings.TrimSpace(req.Catalog.Slug)
+	if modelID == "" || slug == "" || req.Catalog.Status == "" || req.Catalog.Visibility == "" {
+		return repository.PublishModelCatalogInput{}, errors.New("missing required catalog fields")
+	}
+
+	inputModalities, err := jsonStringSlice(req.Catalog.InputModalities)
+	if err != nil {
+		return repository.PublishModelCatalogInput{}, err
+	}
+	outputModalities, err := jsonStringSlice(req.Catalog.OutputModalities)
+	if err != nil {
+		return repository.PublishModelCatalogInput{}, err
+	}
+	capabilities, err := jsonStringSlice(req.Catalog.Capabilities)
+	if err != nil {
+		return repository.PublishModelCatalogInput{}, err
+	}
+
+	input := repository.PublishModelCatalogInput{
+		Catalog: domain.ModelCatalog{
+			ModelID:          modelID,
+			Slug:             slug,
+			Status:           req.Catalog.Status,
+			Visibility:       req.Catalog.Visibility,
+			LogoURL:          strings.TrimSpace(req.Catalog.LogoURL),
+			ContextLength:    req.Catalog.ContextLength,
+			KnowledgeCutoff:  req.Catalog.KnowledgeCutoff,
+			InputModalities:  inputModalities,
+			OutputModalities: outputModalities,
+			Capabilities:     capabilities,
+			Featured:         req.Catalog.Featured,
+			SortWeight:       req.Catalog.SortWeight,
+			PublishedAt:      req.Catalog.PublishedAt,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		},
+		I18n:   make([]domain.ModelCatalogI18n, 0, len(req.I18n)),
+		Prices: make([]domain.ModelPriceVersion, 0, len(req.Prices)),
+	}
+
+	for _, row := range req.I18n {
+		locale := strings.TrimSpace(row.Locale)
+		displayName := strings.TrimSpace(row.DisplayName)
+		if locale == "" || displayName == "" {
+			return repository.PublishModelCatalogInput{}, errors.New("missing required i18n fields")
+		}
+		tags, err := jsonStringSlice(row.Tags)
+		if err != nil {
+			return repository.PublishModelCatalogInput{}, err
+		}
+		input.I18n = append(input.I18n, domain.ModelCatalogI18n{
+			ModelID:          modelID,
+			Locale:           locale,
+			DisplayName:      displayName,
+			ShortDescription: strings.TrimSpace(row.ShortDescription),
+			LongDescription:  row.LongDescription,
+			SEOTitle:         strings.TrimSpace(row.SEOTitle),
+			SEODescription:   strings.TrimSpace(row.SEODescription),
+			Tags:             tags,
+			UpdatedAt:        now,
+		})
+	}
+
+	for _, row := range req.Prices {
+		id := strings.TrimSpace(row.ID)
+		currency := strings.TrimSpace(row.Currency)
+		if id == "" || currency == "" || row.Status == "" || row.EffectiveFrom.IsZero() || row.PublishedAt.IsZero() {
+			return repository.PublishModelCatalogInput{}, errors.New("missing required price fields")
+		}
+		input.Prices = append(input.Prices, domain.ModelPriceVersion{
+			ID:                 id,
+			ModelID:            modelID,
+			Currency:           currency,
+			InputPrice:         row.InputPrice,
+			OutputPrice:        row.OutputPrice,
+			CachedPrice:        row.CachedPrice,
+			CacheCreationPrice: row.CacheCreationPrice,
+			EffectiveFrom:      row.EffectiveFrom,
+			EffectiveUntil:     row.EffectiveUntil,
+			Status:             row.Status,
+			PublishedAt:        row.PublishedAt,
+		})
+	}
+
+	return input, nil
+}
+
+func jsonStringSlice(values []string) (datatypes.JSON, error) {
+	if values == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
 }
 
 func authorizeInternalRequest(w http.ResponseWriter, r *http.Request, internalToken string) bool {

@@ -19,6 +19,7 @@ const (
 	CodeAuthOAuthEmailTaken     ErrorCode = "auth.email_taken"
 	CodeAuthIdentityBound       ErrorCode = "auth.identity_already_bound"
 	CodeAuthTermsRequired       ErrorCode = "auth.terms_required"
+	CodeAuthOAuthNotConfigured  ErrorCode = "auth.oauth_not_configured"
 	CodeWorkspaceNotFound       ErrorCode = "workspace.not_found"
 	CodeWorkspaceLimit          ErrorCode = "workspace.limit_exceeded"
 	CodePermissionDenied        ErrorCode = "workspace.permission_denied"
@@ -51,6 +52,7 @@ var (
 	ErrOAuthEmailTaken         = AppError{Code: CodeAuthOAuthEmailTaken, Message: "This email is already registered. Please sign in first and link Google in account settings.", HTTPStatus: http.StatusConflict}
 	ErrOAuthIdentityBound      = AppError{Code: CodeAuthIdentityBound, Message: "This Google account is already linked to another user", HTTPStatus: http.StatusConflict}
 	ErrTermsRequired           = AppError{Code: CodeAuthTermsRequired, Message: "Terms acceptance required", HTTPStatus: http.StatusForbidden}
+	ErrOAuthNotConfigured      = AppError{Code: CodeAuthOAuthNotConfigured, Message: "OAuth provider is not configured", HTTPStatus: http.StatusServiceUnavailable}
 	ErrWorkspaceNotFound       = AppError{Code: CodeWorkspaceNotFound, Message: "Workspace not found", HTTPStatus: http.StatusNotFound}
 	ErrWorkspaceLimit          = AppError{Code: CodeWorkspaceLimit, Message: "Workspace limit exceeded", HTTPStatus: http.StatusConflict}
 	ErrPermissionDenied        = AppError{Code: CodePermissionDenied, Message: "Permission denied", HTTPStatus: http.StatusForbidden}

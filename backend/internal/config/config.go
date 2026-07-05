@@ -13,16 +13,17 @@ const (
 )
 
 type Config struct {
-	Env              string
-	HTTPAddr         string
-	DatabaseDSN      string
-	AuthPepper       string
-	InternalAPIToken string
-	TrialCredit      TrialCreditConfig
-	GatewayRedis     GatewayRedisConfig
-	ClickHouse       ClickHouseConfig
-	GoogleOAuth      GoogleOAuthConfig
-	GitHubOAuth      GitHubOAuthConfig
+	Env                string
+	HTTPAddr           string
+	DatabaseDSN        string
+	AuthPepper         string
+	InternalAPIToken   string
+	CORSAllowedOrigins []string
+	TrialCredit        TrialCreditConfig
+	GatewayRedis       GatewayRedisConfig
+	ClickHouse         ClickHouseConfig
+	GoogleOAuth        GoogleOAuthConfig
+	GitHubOAuth        GitHubOAuthConfig
 }
 
 type GoogleOAuthConfig struct {
@@ -90,28 +91,42 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		Env:              env,
-		HTTPAddr:         envOrDefault("PORTAL_HTTP_ADDR", ":8080"),
-		DatabaseDSN:      os.Getenv("PORTAL_DATABASE_DSN"),
-		AuthPepper:       authPepper,
-		InternalAPIToken: internalAPIToken,
-		TrialCredit:      trialCredit,
-		GatewayRedis:     gatewayRedis,
-		ClickHouse:       loadClickHouseConfig(),
-		GoogleOAuth:      loadGoogleOAuthConfig(),
-		GitHubOAuth:      loadGitHubOAuthConfig(),
+		Env:                env,
+		HTTPAddr:           envOrDefault("PORTAL_HTTP_ADDR", ":8080"),
+		DatabaseDSN:        os.Getenv("PORTAL_DATABASE_DSN"),
+		AuthPepper:         authPepper,
+		InternalAPIToken:   internalAPIToken,
+		CORSAllowedOrigins: loadCORSAllowedOrigins(env),
+		TrialCredit:        trialCredit,
+		GatewayRedis:       gatewayRedis,
+		ClickHouse:         loadClickHouseConfig(),
+		GoogleOAuth:        loadGoogleOAuthConfig(),
+		GitHubOAuth:        loadGitHubOAuthConfig(),
 	}, nil
+}
+
+func loadCORSAllowedOrigins(env string) []string {
+	raw := strings.TrimSpace(os.Getenv("PORTAL_CORS_ALLOWED_ORIGINS"))
+	if raw == "" && env != "production" {
+		return []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	}
+	return splitCommaSeparated(raw)
+}
+
+func splitCommaSeparated(raw string) []string {
+	values := make([]string, 0)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 func loadClickHouseConfig() ClickHouseConfig {
 	addrRaw := strings.TrimSpace(os.Getenv("PORTAL_CLICKHOUSE_ADDR"))
-	addr := make([]string, 0)
-	for _, part := range strings.Split(addrRaw, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			addr = append(addr, part)
-		}
-	}
+	addr := splitCommaSeparated(addrRaw)
 
 	return ClickHouseConfig{
 		Enabled:  normalizeEnv(os.Getenv("PORTAL_USAGE_CLICKHOUSE_ENABLED")) == "true",

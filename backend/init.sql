@@ -71,6 +71,27 @@ CREATE TABLE model_catalog_i18n (
     CONSTRAINT fk_model_catalog_i18n_model FOREIGN KEY (model_id) REFERENCES model_catalogs(model_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型目录多语言内容表';
 
+CREATE TABLE model_price_versions (
+    id VARCHAR(32) PRIMARY KEY COMMENT '价格版本ID',
+    model_id VARCHAR(191) NOT NULL COMMENT '模型ID',
+    currency VARCHAR(8) NOT NULL COMMENT '币种',
+    input_price DECIMAL(18,9) NOT NULL COMMENT '输入价格，CNY/1M tokens',
+    output_price DECIMAL(18,9) NOT NULL COMMENT '输出价格，CNY/1M tokens',
+    cached_price DECIMAL(18,9) NULL COMMENT '缓存命中价格，CNY/1M tokens',
+    cache_creation_price DECIMAL(18,9) NULL COMMENT '缓存创建价格，CNY/1M tokens',
+    effective_from DATETIME(3) NOT NULL COMMENT '生效时间',
+    effective_until DATETIME(3) NULL COMMENT '失效时间',
+    status VARCHAR(32) NOT NULL COMMENT '价格状态',
+    published_at DATETIME(3) NOT NULL COMMENT '发布时间',
+    UNIQUE KEY uk_model_price_versions_model_effective (model_id, effective_from),
+    KEY idx_model_price_versions_current (model_id, status, effective_from, effective_until),
+    CONSTRAINT fk_model_price_versions_model FOREIGN KEY (model_id) REFERENCES model_catalogs(model_id),
+    CONSTRAINT chk_model_price_versions_input_nonnegative CHECK (input_price >= 0),
+    CONSTRAINT chk_model_price_versions_output_nonnegative CHECK (output_price >= 0),
+    CONSTRAINT chk_model_price_versions_cache_nonnegative CHECK (cached_price IS NULL OR cached_price >= 0),
+    CONSTRAINT chk_model_price_versions_cache_creation_nonnegative CHECK (cache_creation_price IS NULL OR cache_creation_price >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型价格版本表';
+
 CREATE TABLE model_service_metrics (
     model_id VARCHAR(191) NOT NULL COMMENT '模型ID',
     window VARCHAR(16) NOT NULL COMMENT '统计窗口',
@@ -93,6 +114,7 @@ CREATE TABLE workspaces (
     name VARCHAR(160) NOT NULL COMMENT '工作空间名称',
     slug VARCHAR(160) NOT NULL COMMENT '工作空间URL标识',
     owner_user_id VARCHAR(32) NOT NULL COMMENT '所有者用户ID',
+    tenant_code VARCHAR(64) NULL DEFAULT NULL COMMENT '关联的Admin租户唯一英文编码',
     status VARCHAR(32) NOT NULL COMMENT '工作空间状态',
     trial_granted_at DATETIME(3) NULL COMMENT '试用金发放时间',
     created_by_user_id VARCHAR(32) NOT NULL COMMENT '创建人用户ID',

@@ -60,9 +60,14 @@ npm start
 ```bash
 cd backend
 
-# 运行
+# 运行（从项目根目录的 .env 注入 PORTAL_* 环境变量）
+set -a
+source ../.env
+set +a
 go run ./cmd/portal-api
 ```
+
+VS Code 的 `Portal Backend API` 启动配置会自动加载项目根目录 `.env`。
 
 ## 环境变量
 

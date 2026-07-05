@@ -179,26 +179,26 @@ func TestGetPublicModelBySlugIncludesCurrentPriceAndMetrics(t *testing.T) {
 	cacheReadPrice := 0.000300
 	prices := []domain.ModelPriceVersion{
 		{
-			ID:            "prc-exp-" + suffix,
-			ModelID:       modelID,
-			Currency:      "CNY",
-			InputPrice:    0.001000,
-			OutputPrice:   0.002000,
-			EffectiveFrom: now.Add(-4 * time.Hour),
+			ID:             "prc-exp-" + suffix,
+			ModelID:        modelID,
+			Currency:       "CNY",
+			InputPrice:     0.001000,
+			OutputPrice:    0.002000,
+			EffectiveFrom:  now.Add(-4 * time.Hour),
 			EffectiveUntil: &expiredUntil,
-			Status:        domain.ModelPriceStatusActive,
-			PublishedAt:   now.Add(-4 * time.Hour),
+			Status:         domain.ModelPriceStatusActive,
+			PublishedAt:    now.Add(-4 * time.Hour),
 		},
 		{
-			ID:           "prc-cur-" + suffix,
-			ModelID:      modelID,
-			Currency:     "CNY",
-			InputPrice:   0.003000,
-			OutputPrice:  0.004000,
-			CachedPrice:  &cacheReadPrice,
+			ID:            "prc-cur-" + suffix,
+			ModelID:       modelID,
+			Currency:      "CNY",
+			InputPrice:    0.003000,
+			OutputPrice:   0.004000,
+			CachedPrice:   &cacheReadPrice,
 			EffectiveFrom: currentFrom,
-			Status:       domain.ModelPriceStatusActive,
-			PublishedAt:  currentFrom,
+			Status:        domain.ModelPriceStatusActive,
+			PublishedAt:   currentFrom,
 		},
 		{
 			ID:            "prc-fut-" + suffix,
@@ -314,6 +314,91 @@ func TestGetPublicModelBySlugReturnsNotFoundForPrivate(t *testing.T) {
 	_, err := repos.GetPublicModelBySlug(ctx, model.Slug, DefaultLocale)
 	if !errors.Is(err, ErrModelNotFound) {
 		t.Fatalf("got err %v, want ErrModelNotFound", err)
+	}
+}
+
+func TestPublishModelCatalogUpsertsCatalogI18nAndPrices(t *testing.T) {
+	db := testDB(t)
+	repos := New(db)
+	ctx := context.Background()
+	suffix := uniqueSuffix(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	effectiveFrom := now.Add(-time.Hour)
+	modelID := "model-publish-" + suffix
+	slug := "publish-" + suffix
+	contextLength := int64(128000)
+	cachePrice := 0.0005
+	longDescription := "First long description"
+
+	input := PublishModelCatalogInput{
+		Catalog: domain.ModelCatalog{
+			ModelID:          modelID,
+			Slug:             slug,
+			Status:           domain.ModelCatalogStatusAvailable,
+			Visibility:       domain.ModelCatalogVisibilityPublic,
+			LogoURL:          "https://example.com/model.png",
+			ContextLength:    &contextLength,
+			InputModalities:  datatypes.JSON([]byte(`["text"]`)),
+			OutputModalities: datatypes.JSON([]byte(`["text"]`)),
+			Capabilities:     datatypes.JSON([]byte(`["chat"]`)),
+			Featured:         true,
+			SortWeight:       10,
+			PublishedAt:      &now,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		},
+		I18n: []domain.ModelCatalogI18n{{
+			ModelID:          modelID,
+			Locale:           FallbackLocale,
+			DisplayName:      "Published Model",
+			ShortDescription: "Published short description",
+			LongDescription:  &longDescription,
+			Tags:             datatypes.JSON([]byte(`["stable"]`)),
+			UpdatedAt:        now,
+		}},
+		Prices: []domain.ModelPriceVersion{{
+			ID:            "prc-publish-" + suffix,
+			ModelID:       modelID,
+			Currency:      "CNY",
+			InputPrice:    0.001,
+			OutputPrice:   0.002,
+			CachedPrice:   &cachePrice,
+			EffectiveFrom: effectiveFrom,
+			Status:        domain.ModelPriceStatusActive,
+			PublishedAt:   now,
+		}},
+	}
+
+	if err := repos.PublishModelCatalog(ctx, input); err != nil {
+		t.Fatalf("publish model catalog: %v", err)
+	}
+
+	input.Catalog.SortWeight = 20
+	input.Catalog.UpdatedAt = now.Add(time.Minute)
+	input.I18n[0].DisplayName = "Published Model Updated"
+	input.I18n[0].UpdatedAt = now.Add(time.Minute)
+	input.Prices[0].OutputPrice = 0.003
+	if err := repos.PublishModelCatalog(ctx, input); err != nil {
+		t.Fatalf("republish model catalog: %v", err)
+	}
+
+	detail, err := repos.GetPublicModelBySlug(ctx, slug, FallbackLocale)
+	if err != nil {
+		t.Fatalf("get published model: %v", err)
+	}
+	if detail.DisplayName != "Published Model Updated" || detail.SortWeight != 20 {
+		t.Fatalf("got published model %+v", detail)
+	}
+	if detail.Price == nil || detail.Price.InputPrice != 0.001 || detail.Price.OutputPrice != 0.003 {
+		t.Fatalf("got price %#v", detail.Price)
+	}
+
+	var priceCount int64
+	if err := db.Model(&domain.ModelPriceVersion{}).Where("model_id = ?", modelID).Count(&priceCount).Error; err != nil {
+		t.Fatalf("count prices: %v", err)
+	}
+	if priceCount != 1 {
+		t.Fatalf("price rows = %d, want 1", priceCount)
 	}
 }
 

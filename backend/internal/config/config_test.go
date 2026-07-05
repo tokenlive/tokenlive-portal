@@ -50,6 +50,50 @@ func TestLoadAuthPepperRespectsExplicitValue(t *testing.T) {
 	}
 }
 
+func TestLoadCORSAllowedOriginsDevelopmentDefault(t *testing.T) {
+	t.Setenv("PORTAL_ENV", "development")
+	t.Setenv("PORTAL_CORS_ALLOWED_ORIGINS", "")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	want := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	if strings.Join(got.CORSAllowedOrigins, ",") != strings.Join(want, ",") {
+		t.Fatalf("CORSAllowedOrigins = %#v, want %#v", got.CORSAllowedOrigins, want)
+	}
+}
+
+func TestLoadCORSAllowedOriginsProductionDefaultEmpty(t *testing.T) {
+	t.Setenv("PORTAL_ENV", "production")
+	t.Setenv("PORTAL_CORS_ALLOWED_ORIGINS", "")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	if len(got.CORSAllowedOrigins) != 0 {
+		t.Fatalf("CORSAllowedOrigins = %#v, want empty", got.CORSAllowedOrigins)
+	}
+}
+
+func TestLoadCORSAllowedOriginsEnvOverrides(t *testing.T) {
+	t.Setenv("PORTAL_ENV", "production")
+	t.Setenv("PORTAL_CORS_ALLOWED_ORIGINS", " https://portal.example.com, http://localhost:3000 ,, ")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	want := []string{"https://portal.example.com", "http://localhost:3000"}
+	if strings.Join(got.CORSAllowedOrigins, ",") != strings.Join(want, ",") {
+		t.Fatalf("CORSAllowedOrigins = %#v, want %#v", got.CORSAllowedOrigins, want)
+	}
+}
+
 func TestLoadTrialCreditDefaults(t *testing.T) {
 	t.Setenv("PORTAL_ENV", "development")
 	t.Setenv("PORTAL_AUTH_PEPPER", "")
@@ -161,6 +205,21 @@ func TestLoadOAuthConfigs(t *testing.T) {
 	}
 	if got.GitHubOAuth.ClientID != "github-client" || got.GitHubOAuth.ClientSecret != "github-secret" || got.GitHubOAuth.RedirectURL != "https://portal.example.com/github" {
 		t.Fatalf("GitHubOAuth = %+v", got.GitHubOAuth)
+	}
+}
+
+func TestGoogleOAuthRequiresRedirectURL(t *testing.T) {
+	t.Setenv("PORTAL_GOOGLE_CLIENT_ID", "google-client")
+	t.Setenv("PORTAL_GOOGLE_CLIENT_SECRET", "google-secret")
+	t.Setenv("PORTAL_GOOGLE_REDIRECT_URL", "")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() err = %v", err)
+	}
+
+	if got.GoogleOAuth.Enabled() {
+		t.Fatalf("GoogleOAuth should be disabled until redirect URL is configured")
 	}
 }
 

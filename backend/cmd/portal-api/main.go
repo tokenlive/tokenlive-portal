@@ -58,7 +58,7 @@ func main() {
 	}
 	defer cleanup()
 
-	handler := api.RequestID(mux)
+	handler := api.CORS(cfg.CORSAllowedOrigins)(api.RequestID(mux))
 	server := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: handler,

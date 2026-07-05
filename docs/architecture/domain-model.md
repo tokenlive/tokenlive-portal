@@ -242,26 +242,27 @@ Rules:
 
 ### ModelPriceVersion
 
-Immutable public price version.
+Published public price snapshot/version.
 
 Key fields:
 
 - `id`
 - `model_id`
 - `currency`
-- `input_micro_cny_per_1m_tokens`
-- `output_micro_cny_per_1m_tokens`
-- `cache_read_micro_cny_per_1m_tokens`
+- `input_price`
+- `output_price`
+- `cached_price`
+- `cache_creation_price`
 - `effective_from`
 - `effective_until`
 - `status`
-- `published_by_user_id`
 - `published_at`
 
 Rules:
 
 - Prices are displayed as CNY per one million tokens.
-- Price versions are immutable after publication.
+- Admin owns price editing and publication audit.
+- Portal stores published snapshots for display and historical billing references.
 - Requests reference the exact price version used for settlement.
 
 ### ModelServiceMetric
@@ -590,4 +591,3 @@ Worker:
 - `portal-api` handles HTTP.
 - `portal-worker` handles email, synchronization, reconciliation, cleanup, aggregation, and alerts.
 - Both processes share the same Go codebase and database models.
-

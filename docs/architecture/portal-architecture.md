@@ -127,7 +127,7 @@ Gateway or Admin determines whether the model is actually callable. Portal can m
 
 Provider and Endpoint details are not exposed to users in first release.
 
-Model catalog and prices are maintained by Admin and published to Portal. Portal reads only published data.
+Model catalog and prices are maintained by Admin and published to Portal through `POST /internal/v1/model-catalogs/publish`. Portal persists the published snapshot and reads only published data.
 
 History rules:
 

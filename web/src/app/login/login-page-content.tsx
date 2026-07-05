@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { startEmailLogin, verifyEmailLogin } from "@/lib/api";
+import { getMe, startEmailLogin, verifyEmailLogin } from "@/lib/api";
 import { getPostLoginPath } from "@/lib/auth-flow";
 import { OAUTH_PROVIDERS } from "@/lib/oauth-providers";
 
@@ -20,6 +20,7 @@ export default function LoginPageContent() {
   const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOAuthLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
 
@@ -63,6 +64,68 @@ export default function LoginPageContent() {
     setCode("");
     setDevCode(null);
     setError(null);
+  };
+
+  const handleOAuthLogin = (provider: (typeof OAUTH_PROVIDERS)[number]) => {
+    if (!provider.loginHref || typeof window === "undefined") {
+      return;
+    }
+
+    setError(null);
+    setOAuthLoading(provider.id);
+
+    const popup = window.open(
+      provider.loginHref,
+      `tokenlive-oauth-${provider.id}`,
+      "width=520,height=680,menubar=no,toolbar=no,location=yes,status=no"
+    );
+    if (!popup) {
+      setOAuthLoading(null);
+      setError("Popup was blocked. Please allow popups and try again.");
+      return;
+    }
+
+    const expectedOrigin = new URL(provider.loginHref, window.location.href).origin;
+    const popupTimer = window.setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+      }
+    }, 500);
+    const cleanup = () => {
+      window.clearInterval(popupTimer);
+      window.removeEventListener("message", handleMessage);
+      setOAuthLoading(null);
+    };
+
+    async function handleMessage(event: MessageEvent) {
+      if (event.origin !== expectedOrigin) {
+        return;
+      }
+      const data = event.data as {
+        type?: string;
+        success?: boolean;
+        code?: string;
+      };
+      if (!data || data.type !== "oauth-callback") {
+        return;
+      }
+
+      cleanup();
+      if (!data.success) {
+        setError(data.code || "OAuth sign-in failed");
+        return;
+      }
+
+      try {
+        const user = await getMe();
+        router.push(getPostLoginPath(user));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "OAuth sign-in failed");
+      }
+    }
+
+    window.addEventListener("message", handleMessage);
+    popup.focus();
   };
 
   return (
@@ -203,14 +266,18 @@ export default function LoginPageContent() {
                 <div className="space-y-2">
                   {OAUTH_PROVIDERS.map((provider) =>
                     provider.enabled && provider.loginHref ? (
-                      <a
+                      <button
                         key={provider.id}
-                        href={provider.loginHref}
+                        type="button"
+                        onClick={() => handleOAuthLogin(provider)}
+                        disabled={oauthLoading !== null}
                         className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium text-foreground transition-colors hover:bg-secondary tl-focus-ring"
                       >
                         <ProviderIcon provider={provider.id} />
-                        Continue with {provider.label}
-                      </a>
+                        {oauthLoading === provider.id
+                          ? "Waiting for authentication..."
+                          : `Continue with ${provider.label}`}
+                      </button>
                     ) : (
                       <button
                         key={provider.id}

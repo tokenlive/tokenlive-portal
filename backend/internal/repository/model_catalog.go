@@ -10,6 +10,8 @@ import (
 
 	"github.com/tokenlive/tokenlive-portal/backend/internal/domain"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrModelNotFound = errors.New("model not found")
@@ -56,11 +58,11 @@ type PublicModelDetail struct {
 }
 
 type PublicModelPrice struct {
-	Currency            string
-	InputPrice          float64
-	OutputPrice         float64
-	CachedPrice         *float64
-	CacheCreationPrice  *float64
+	Currency           string
+	InputPrice         float64
+	OutputPrice        float64
+	CachedPrice        *float64
+	CacheCreationPrice *float64
 }
 
 type PublicModelMetric struct {
@@ -72,6 +74,81 @@ type PublicModelMetric struct {
 	SuccessRate   *float64
 	SampleCount   int64
 	UpdatedAt     time.Time
+}
+
+type PublishModelCatalogInput struct {
+	Catalog domain.ModelCatalog
+	I18n    []domain.ModelCatalogI18n
+	Prices  []domain.ModelPriceVersion
+}
+
+func (r *Repositories) PublishModelCatalog(ctx context.Context, input PublishModelCatalogInput) error {
+	return r.withTx(ctx, func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "model_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"slug",
+				"status",
+				"visibility",
+				"logo_url",
+				"context_length",
+				"knowledge_cutoff",
+				"input_modalities",
+				"output_modalities",
+				"capabilities",
+				"featured",
+				"sort_weight",
+				"published_at",
+				"updated_at",
+			}),
+		}).Create(&input.Catalog).Error; err != nil {
+			return fmt.Errorf("upsert model catalog: %w", err)
+		}
+
+		if len(input.I18n) > 0 {
+			for i := range input.I18n {
+				input.I18n[i].ModelID = input.Catalog.ModelID
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "model_id"}, {Name: "locale"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"display_name",
+					"short_description",
+					"long_description",
+					"seo_title",
+					"seo_description",
+					"tags",
+					"updated_at",
+				}),
+			}).Create(&input.I18n).Error; err != nil {
+				return fmt.Errorf("upsert model catalog i18n: %w", err)
+			}
+		}
+
+		if len(input.Prices) > 0 {
+			for i := range input.Prices {
+				input.Prices[i].ModelID = input.Catalog.ModelID
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "model_id"}, {Name: "effective_from"}},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"id",
+					"currency",
+					"input_price",
+					"output_price",
+					"cached_price",
+					"cache_creation_price",
+					"effective_until",
+					"status",
+					"published_at",
+				}),
+			}).Create(&input.Prices).Error; err != nil {
+				return fmt.Errorf("upsert model price versions: %w", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 func (r *Repositories) ListPublicModels(ctx context.Context, opts ModelCatalogListOptions) ([]PublicModel, error) {
@@ -238,12 +315,12 @@ type publicModelDetailRow struct {
 }
 
 type publicModelPriceRow struct {
-	ModelID             string
-	Currency            string
-	InputPrice          float64
-	OutputPrice         float64
-	CachedPrice         *float64
-	CacheCreationPrice  *float64
+	ModelID            string
+	Currency           string
+	InputPrice         float64
+	OutputPrice        float64
+	CachedPrice        *float64
+	CacheCreationPrice *float64
 }
 
 type publicModelMetricRow struct {

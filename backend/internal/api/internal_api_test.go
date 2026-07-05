@@ -205,6 +205,88 @@ func TestInternalAPIRuntimeSyncReturnsErrorOnRuntimeSyncFailure(t *testing.T) {
 	}
 }
 
+func TestInternalAPIPublishModelCatalog(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token")
+
+	body := `{
+		"catalog": {
+			"model_id": "gpt-4.1-mini",
+			"slug": "gpt-4-1-mini",
+			"status": "available",
+			"visibility": "public",
+			"logo_url": "https://example.com/logo.png",
+			"context_length": 128000,
+			"input_modalities": ["text"],
+			"output_modalities": ["text"],
+			"capabilities": ["chat"],
+			"featured": true,
+			"sort_weight": 50,
+			"published_at": "2026-07-05T01:02:03Z"
+		},
+		"i18n": [{
+			"locale": "en",
+			"display_name": "GPT 4.1 Mini",
+			"short_description": "Fast small model",
+			"long_description": "Fast small model for production.",
+			"seo_title": "GPT 4.1 Mini",
+			"seo_description": "Fast small model",
+			"tags": ["fast", "cheap"]
+		}],
+		"prices": [{
+			"id": "prc_4_1_mini",
+			"currency": "CNY",
+			"input_price": 0.001,
+			"output_price": 0.002,
+			"cached_price": 0.0005,
+			"effective_from": "2026-07-05T01:00:00Z",
+			"status": "active",
+			"published_at": "2026-07-05T01:02:03Z"
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/model-catalogs/publish", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if store.publishedModel.Catalog.ModelID != "gpt-4.1-mini" || store.publishedModel.Catalog.Slug != "gpt-4-1-mini" {
+		t.Fatalf("catalog = %+v", store.publishedModel.Catalog)
+	}
+	if len(store.publishedModel.I18n) != 1 || store.publishedModel.I18n[0].ModelID != "gpt-4.1-mini" || store.publishedModel.I18n[0].Locale != "en" {
+		t.Fatalf("i18n = %+v", store.publishedModel.I18n)
+	}
+	if len(store.publishedModel.Prices) != 1 || store.publishedModel.Prices[0].ModelID != "gpt-4.1-mini" || store.publishedModel.Prices[0].OutputPrice != 0.002 {
+		t.Fatalf("prices = %+v", store.publishedModel.Prices)
+	}
+}
+
+func TestInternalAPIPublishModelCatalogRejectsInvalidRequest(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token")
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/model-catalogs/publish", strings.NewReader(`{"catalog":{"model_id":"missing-slug"}}`))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if store.publishCalled {
+		t.Fatal("publish should not be called for invalid request")
+	}
+}
+
 func TestInternalAPIRoutes(t *testing.T) {
 	repos := testRepos(t)
 	ctx := context.Background()
@@ -336,6 +418,9 @@ type fakeInternalStore struct {
 
 	boundWorkspaceID string
 	boundTenantCode  *string
+
+	publishedModel PublishModelCatalogInput
+	publishCalled  bool
 }
 
 func (f *fakeInternalStore) SearchUsers(context.Context, string, int) ([]domain.User, error) {
@@ -364,6 +449,12 @@ func (f *fakeInternalStore) FindWorkspaceByID(context.Context, string) (domain.W
 func (f *fakeInternalStore) ListAPIKeysByWorkspace(_ context.Context, workspaceID string) ([]domain.APIKey, error) {
 	f.listAPIKeysWorkspaceID = workspaceID
 	return f.apiKeys, nil
+}
+
+func (f *fakeInternalStore) PublishModelCatalog(_ context.Context, input PublishModelCatalogInput) error {
+	f.publishCalled = true
+	f.publishedModel = input
+	return nil
 }
 
 type fakeInternalRuntimeSyncer struct {

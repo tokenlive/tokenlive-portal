@@ -40,12 +40,13 @@ Implemented:
 - Public model list and detail APIs.
 - Published model filtering.
 - Public price and metrics response shaping.
+- Internal model catalog and price publish endpoint for Admin integration.
 - Provider and Endpoint details are hidden from user-facing APIs.
 
 Still pending:
 
 - Frontend model marketplace pages.
-- Admin publication workflow.
+- Admin UI and caller-side publication workflow in `tokenlive-admin`.
 - Favorites.
 - Model comparison.
 - Metrics sample-threshold policy.
@@ -202,7 +203,7 @@ Runtime integration:
 
 Operations and Admin integration:
 
-- Model catalog editing and publication from `tokenlive-admin`.
+- Model catalog editing UI and publication caller from `tokenlive-admin`.
 - Portal Workspace API key safe metadata and runtime resync proxy/UI from `tokenlive-admin`.
 - Recharge review from `tokenlive-admin`.
 - Support ticket processing from `tokenlive-admin`.
