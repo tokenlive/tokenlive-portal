@@ -13,6 +13,8 @@ type APIKeyRuntimeRecord struct {
 	KeyID       string
 	UserID      string
 	WorkspaceID string
+	ScopeType   string
+	ScopeCode   string
 	Tenant      string
 	UserTenant  string
 	Status      int
@@ -39,26 +41,29 @@ func (noopAPIKeyRuntimeSyncer) DeleteAPIKey(context.Context, string) error {
 	return nil
 }
 
-func runtimeRecordFromAPIKey(workspace domain.Workspace, key domain.APIKey) (APIKeyRuntimeRecord, bool) {
+func runtimeRecordFromAPIKey(workspace domain.Workspace, access domain.WorkspaceRuntimeAccess, key domain.APIKey) (APIKeyRuntimeRecord, bool) {
 	keyHash := strings.TrimSpace(key.KeyHash)
 	if keyHash == "" {
 		return APIKeyRuntimeRecord{}, false
 	}
-	if workspace.TenantCode == nil || strings.TrimSpace(*workspace.TenantCode) == "" {
+	scopeType := strings.TrimSpace(string(access.ScopeType))
+	scopeCode := strings.TrimSpace(access.ScopeCode)
+	if access.Status != domain.RuntimeAccessStatusActive || scopeType == "" || scopeCode == "" {
 		return APIKeyRuntimeRecord{KeyHash: keyHash}, false
 	}
 	if key.Status != domain.APIKeyStatusEnabled {
 		return APIKeyRuntimeRecord{KeyHash: keyHash}, false
 	}
 
-	tenantCode := strings.TrimSpace(*workspace.TenantCode)
 	return APIKeyRuntimeRecord{
 		KeyHash:     keyHash,
 		KeyID:       key.ID,
 		UserID:      key.CreatedByUserID,
 		WorkspaceID: workspace.ID,
-		Tenant:      tenantCode,
-		UserTenant:  tenantCode,
+		ScopeType:   scopeType,
+		ScopeCode:   scopeCode,
+		Tenant:      scopeCode,
+		UserTenant:  scopeCode,
 		Status:      1,
 		Quota:       -1,
 		ExpiresAt:   expiresAtUnix(key.ExpiresAt),

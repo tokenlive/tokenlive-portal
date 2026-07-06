@@ -28,6 +28,8 @@ func (s redisAPIKeyRuntimeSyncer) UpsertAPIKey(ctx context.Context, record APIKe
 		"key_id", record.KeyID,
 		"user_id", record.UserID,
 		"workspace_id", record.WorkspaceID,
+		"scope_type", record.ScopeType,
+		"scope_code", record.ScopeCode,
 		"tenant", record.Tenant,
 		"user_tenant", record.UserTenant,
 		"status", record.Status,

@@ -26,10 +26,9 @@ type SearchUsersResponse struct {
 }
 
 type WorkspaceSearchResult struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Slug       string  `json:"slug"`
-	TenantCode *string `json:"tenant_code"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 type SearchWorkspacesResponse struct {
@@ -52,8 +51,31 @@ type WorkspaceAPIKeysResponse struct {
 	APIKeys []InternalAPIKeyResult `json:"api_keys"`
 }
 
-type BindTenantRequest struct {
-	TenantCode string `json:"tenant_code"`
+type RuntimeAccessRequest struct {
+	ScopeType string `json:"scope_type"`
+	ScopeCode string `json:"scope_code"`
+	Actor     string `json:"actor"`
+}
+
+type DisableRuntimeAccessRequest struct {
+	Actor string `json:"actor"`
+}
+
+type WorkspaceRuntimeAccessResult struct {
+	WorkspaceID string     `json:"workspace_id"`
+	ScopeType   string     `json:"scope_type"`
+	ScopeCode   string     `json:"scope_code"`
+	Status      string     `json:"status"`
+	ActivatedAt *time.Time `json:"activated_at"`
+	ActivatedBy string     `json:"activated_by"`
+	DisabledAt  *time.Time `json:"disabled_at"`
+	DisabledBy  string     `json:"disabled_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type WorkspaceRuntimeAccessResponse struct {
+	RuntimeAccess *WorkspaceRuntimeAccessResult `json:"runtime_access"`
 }
 
 type PublishModelCatalogInput = repository.PublishModelCatalogInput
@@ -106,8 +128,10 @@ type publishModelPriceVersionRequest struct {
 type internalRoutesStore interface {
 	SearchUsers(ctx context.Context, keyword string, limit int) ([]domain.User, error)
 	SearchWorkspaces(ctx context.Context, keyword string, limit int) ([]domain.Workspace, error)
-	BindTenantCode(ctx context.Context, id string, tenantCode *string) error
 	FindWorkspaceByID(ctx context.Context, id string) (domain.Workspace, error)
+	FindWorkspaceRuntimeAccess(ctx context.Context, workspaceID string) (domain.WorkspaceRuntimeAccess, error)
+	UpsertWorkspaceRuntimeAccess(ctx context.Context, input repository.UpsertWorkspaceRuntimeAccessInput) (domain.WorkspaceRuntimeAccess, error)
+	DisableWorkspaceRuntimeAccess(ctx context.Context, workspaceID string, actor string) (domain.WorkspaceRuntimeAccess, error)
 	ListAPIKeysByWorkspace(ctx context.Context, workspaceID string) ([]domain.APIKey, error)
 	PublishModelCatalog(ctx context.Context, input repository.PublishModelCatalogInput) error
 }
@@ -184,10 +208,9 @@ func RegisterInternalRoutes(mux *http.ServeMux, store internalRoutesStore, inter
 		results := make([]WorkspaceSearchResult, 0, len(workspaces))
 		for _, ws := range workspaces {
 			results = append(results, WorkspaceSearchResult{
-				ID:         ws.ID,
-				Name:       ws.Name,
-				Slug:       ws.Slug,
-				TenantCode: ws.TenantCode,
+				ID:   ws.ID,
+				Name: ws.Name,
+				Slug: ws.Slug,
 			})
 		}
 
@@ -195,29 +218,58 @@ func RegisterInternalRoutes(mux *http.ServeMux, store internalRoutesStore, inter
 		_ = json.NewEncoder(w).Encode(SearchWorkspacesResponse{Workspaces: results})
 	})
 
-	// 3. 工作空间绑定租户接口
-	mux.HandleFunc("POST /internal/v1/workspaces/{id}/bind-tenant", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /internal/v1/workspaces/{id}/runtime-access", func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get("X-Request-ID")
 		workspaceID := r.PathValue("id")
-
-		// 验证 Token
 		if !authorizeInternalRequest(w, r, internalToken) {
 			return
 		}
 
-		var req BindTenantRequest
+		access, err := store.FindWorkspaceRuntimeAccess(r.Context(), workspaceID)
+		if err != nil {
+			if errors.Is(err, repository.ErrWorkspaceRuntimeAccessNotFound) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(WorkspaceRuntimeAccessResponse{})
+				return
+			}
+			WriteError(w, requestID, ErrInternalError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		result := workspaceRuntimeAccessResultFromDomain(access)
+		_ = json.NewEncoder(w).Encode(WorkspaceRuntimeAccessResponse{RuntimeAccess: &result})
+	})
+
+	mux.HandleFunc("PUT /internal/v1/workspaces/{id}/runtime-access", func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		workspaceID := r.PathValue("id")
+		if !authorizeInternalRequest(w, r, internalToken) {
+			return
+		}
+
+		var req RuntimeAccessRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			WriteError(w, requestID, ErrInvalidRequest)
 			return
 		}
 
-		tenantCode := strings.TrimSpace(req.TenantCode)
-		if tenantCode == "" {
+		scopeType := strings.TrimSpace(req.ScopeType)
+		scopeCode := strings.TrimSpace(req.ScopeCode)
+		if scopeType == "" {
+			scopeType = string(domain.RuntimeAccessScopeTenant)
+		}
+		if scopeType != string(domain.RuntimeAccessScopeTenant) || scopeCode == "" {
 			WriteError(w, requestID, ErrInvalidRequest)
 			return
 		}
 
-		err := store.BindTenantCode(r.Context(), workspaceID, &tenantCode)
+		_, err := store.UpsertWorkspaceRuntimeAccess(r.Context(), repository.UpsertWorkspaceRuntimeAccessInput{
+			WorkspaceID: workspaceID,
+			ScopeType:   domain.RuntimeAccessScopeType(scopeType),
+			ScopeCode:   scopeCode,
+			Actor:       strings.TrimSpace(req.Actor),
+		})
 		if err != nil {
 			if errors.Is(err, repository.ErrWorkspaceNotFound) {
 				WriteError(w, requestID, ErrWorkspaceNotFound)
@@ -231,19 +283,21 @@ func RegisterInternalRoutes(mux *http.ServeMux, store internalRoutesStore, inter
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// 4. 工作空间解绑租户接口
-	mux.HandleFunc("POST /internal/v1/workspaces/{id}/unbind-tenant", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /internal/v1/workspaces/{id}/runtime-access/disable", func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get("X-Request-ID")
 		workspaceID := r.PathValue("id")
-
-		// 验证 Token
 		if !authorizeInternalRequest(w, r, internalToken) {
 			return
 		}
 
-		err := store.BindTenantCode(r.Context(), workspaceID, nil)
+		var req DisableRuntimeAccessRequest
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&req)
+		}
+
+		_, err := store.DisableWorkspaceRuntimeAccess(r.Context(), workspaceID, strings.TrimSpace(req.Actor))
 		if err != nil {
-			if errors.Is(err, repository.ErrWorkspaceNotFound) {
+			if errors.Is(err, repository.ErrWorkspaceNotFound) || errors.Is(err, repository.ErrWorkspaceRuntimeAccessNotFound) {
 				WriteError(w, requestID, ErrWorkspaceNotFound)
 				return
 			}
@@ -444,12 +498,19 @@ func syncWorkspaceAPIKeys(ctx context.Context, store internalRoutesStore, runtim
 	if err != nil {
 		return err
 	}
+	access, err := store.FindWorkspaceRuntimeAccess(ctx, workspaceID)
+	if err != nil {
+		if !errors.Is(err, repository.ErrWorkspaceRuntimeAccessNotFound) {
+			return err
+		}
+		access = domain.WorkspaceRuntimeAccess{WorkspaceID: workspaceID, Status: domain.RuntimeAccessStatusDisabled}
+	}
 	keys, err := store.ListAPIKeysByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
 	for _, key := range keys {
-		record, shouldUpsert := runtimeRecordFromAPIKey(workspace, key)
+		record, shouldUpsert := runtimeRecordFromAPIKey(workspace, access, key)
 		if shouldUpsert {
 			if err := runtimeSyncer.UpsertAPIKey(ctx, record); err != nil {
 				return err
@@ -464,6 +525,21 @@ func syncWorkspaceAPIKeys(ctx context.Context, store internalRoutesStore, runtim
 		}
 	}
 	return nil
+}
+
+func workspaceRuntimeAccessResultFromDomain(access domain.WorkspaceRuntimeAccess) WorkspaceRuntimeAccessResult {
+	return WorkspaceRuntimeAccessResult{
+		WorkspaceID: access.WorkspaceID,
+		ScopeType:   string(access.ScopeType),
+		ScopeCode:   access.ScopeCode,
+		Status:      string(access.Status),
+		ActivatedAt: access.ActivatedAt,
+		ActivatedBy: access.ActivatedBy,
+		DisabledAt:  access.DisabledAt,
+		DisabledBy:  access.DisabledBy,
+		CreatedAt:   access.CreatedAt,
+		UpdatedAt:   access.UpdatedAt,
+	}
 }
 
 func syncWorkspaceAPIKeysBestEffort(ctx context.Context, store internalRoutesStore, runtimeSyncer APIKeyRuntimeSyncer, workspaceID string) {

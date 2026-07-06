@@ -80,9 +80,9 @@ func TestInternalAPIListAPIKeysReturnsSafeMetadata(t *testing.T) {
 func TestInternalAPIRuntimeSyncReplaysWorkspaceAPIKeys(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	store := &fakeInternalStore{
-		workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+		workspace:     domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 		apiKeys: []domain.APIKey{
 			{ID: "ak_enabled", WorkspaceID: "wsp_1", KeyHash: "hash_enabled", Status: domain.APIKeyStatusEnabled, CreatedByUserID: "usr_1"},
 			{ID: "ak_disabled", WorkspaceID: "wsp_1", KeyHash: "hash_disabled", Status: domain.APIKeyStatusDisabled, CreatedByUserID: "usr_1"},
@@ -100,7 +100,7 @@ func TestInternalAPIRuntimeSyncReplaysWorkspaceAPIKeys(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
 	}
-	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_enabled" || syncer.upserts[0].Tenant != "tenant_a" {
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_enabled" || syncer.upserts[0].ScopeType != "tenant" || syncer.upserts[0].ScopeCode != "tenant_a" {
 		t.Fatalf("upserts = %+v", syncer.upserts)
 	}
 	if len(syncer.deletes) != 1 || syncer.deletes[0] != "hash_disabled" {
@@ -108,7 +108,7 @@ func TestInternalAPIRuntimeSyncReplaysWorkspaceAPIKeys(t *testing.T) {
 	}
 }
 
-func TestInternalAPIBindTenantTriggersRuntimeSync(t *testing.T) {
+func TestInternalAPIActivateRuntimeAccessTriggersRuntimeSync(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeInternalStore{
@@ -125,7 +125,7 @@ func TestInternalAPIBindTenantTriggersRuntimeSync(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterInternalRoutes(mux, store, "token", syncer)
 
-	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/bind-tenant", strings.NewReader(`{"tenant_code":"tenant_a"}`))
+	req := httptest.NewRequest(http.MethodPut, "/internal/v1/workspaces/wsp_1/runtime-access", strings.NewReader(`{"scope_type":"tenant","scope_code":"tenant_a","actor":"admin"}`))
 	req.Header.Set("Authorization", "Bearer token")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -133,15 +133,15 @@ func TestInternalAPIBindTenantTriggersRuntimeSync(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
 	}
-	if store.boundWorkspaceID != "wsp_1" || store.boundTenantCode == nil || *store.boundTenantCode != "tenant_a" {
-		t.Fatalf("bind call = workspace:%q tenant:%v", store.boundWorkspaceID, store.boundTenantCode)
+	if store.runtimeAccess.WorkspaceID != "wsp_1" || store.runtimeAccess.ScopeType != domain.RuntimeAccessScopeTenant || store.runtimeAccess.ScopeCode != "tenant_a" || store.runtimeAccess.Status != domain.RuntimeAccessStatusActive {
+		t.Fatalf("runtime access = %+v", store.runtimeAccess)
 	}
-	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" || syncer.upserts[0].Tenant != "tenant_a" {
+	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" || syncer.upserts[0].ScopeType != "tenant" || syncer.upserts[0].ScopeCode != "tenant_a" {
 		t.Fatalf("upserts = %+v", syncer.upserts)
 	}
 }
 
-func TestInternalAPIBindTenantIgnoresRuntimeSyncFailure(t *testing.T) {
+func TestInternalAPIActivateRuntimeAccessIgnoresRuntimeSyncFailure(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeInternalStore{
@@ -158,7 +158,7 @@ func TestInternalAPIBindTenantIgnoresRuntimeSyncFailure(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterInternalRoutes(mux, store, "token", syncer)
 
-	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/bind-tenant", strings.NewReader(`{"tenant_code":"tenant_a"}`))
+	req := httptest.NewRequest(http.MethodPut, "/internal/v1/workspaces/wsp_1/runtime-access", strings.NewReader(`{"scope_type":"tenant","scope_code":"tenant_a"}`))
 	req.Header.Set("Authorization", "Bearer token")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -166,20 +166,80 @@ func TestInternalAPIBindTenantIgnoresRuntimeSyncFailure(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body = %s, want 204 despite sync failure", rec.Code, rec.Body.String())
 	}
-	if store.boundTenantCode == nil || *store.boundTenantCode != "tenant_a" {
-		t.Fatalf("tenant was not bound: %v", store.boundTenantCode)
+	if store.runtimeAccess.ScopeCode != "tenant_a" || store.runtimeAccess.Status != domain.RuntimeAccessStatusActive {
+		t.Fatalf("runtime access was not activated: %+v", store.runtimeAccess)
 	}
 	if len(syncer.upserts) != 1 || syncer.upserts[0].KeyHash != "hash_1" {
 		t.Fatalf("upserts = %+v, want attempted sync", syncer.upserts)
 	}
 }
 
+func TestInternalAPIDisableRuntimeAccessDeletesRuntimeKeys(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{
+		workspace:     domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
+		apiKeys: []domain.APIKey{{
+			ID:              "ak_1",
+			WorkspaceID:     "wsp_1",
+			KeyHash:         "hash_1",
+			Status:          domain.APIKeyStatusEnabled,
+			CreatedByUserID: "usr_1",
+		}},
+	}
+	syncer := &fakeInternalRuntimeSyncer{}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token", syncer)
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/workspaces/wsp_1/runtime-access/disable", strings.NewReader(`{"actor":"admin"}`))
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if store.runtimeAccess.Status != domain.RuntimeAccessStatusDisabled {
+		t.Fatalf("runtime access = %+v, want disabled", store.runtimeAccess)
+	}
+	if len(syncer.deletes) != 1 || syncer.deletes[0] != "hash_1" {
+		t.Fatalf("deletes = %+v", syncer.deletes)
+	}
+}
+
+func TestInternalAPIGetRuntimeAccessReturnsState(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeInternalStore{
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
+	}
+	mux := http.NewServeMux()
+	RegisterInternalRoutes(mux, store, "token")
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/v1/workspaces/wsp_1/runtime-access", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var resp WorkspaceRuntimeAccessResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.RuntimeAccess == nil || resp.RuntimeAccess.ScopeType != "tenant" || resp.RuntimeAccess.ScopeCode != "tenant_a" || resp.RuntimeAccess.Status != "active" {
+		t.Fatalf("runtime access response = %+v", resp.RuntimeAccess)
+	}
+}
+
 func TestInternalAPIRuntimeSyncReturnsErrorOnRuntimeSyncFailure(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	store := &fakeInternalStore{
-		workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+		workspace:     domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 		apiKeys: []domain.APIKey{{
 			ID:              "ak_1",
 			WorkspaceID:     "wsp_1",
@@ -367,42 +427,37 @@ func TestInternalAPIRoutes(t *testing.T) {
 		}
 	})
 
-	t.Run("Bind and unbind tenant", func(t *testing.T) {
-		// 1. 验证初始状态无 TenantCode
-		db := repos.DB()
-		var ws domain.Workspace
-		if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-			t.Fatalf("get workspace: %v", err)
-		}
-		if ws.TenantCode != nil {
-			t.Errorf("expected nil tenant_code, got %v", ws.TenantCode)
-		}
-
-		// 2. 绑定租户
-		reqBody, _ := json.Marshal(BindTenantRequest{TenantCode: "test-tenant-code"})
-		rec := sendReq(http.MethodPost, "/internal/v1/workspaces/"+wsID+"/bind-tenant", reqBody, internalToken)
+	t.Run("Activate and disable runtime access", func(t *testing.T) {
+		reqBody, _ := json.Marshal(RuntimeAccessRequest{ScopeType: "tenant", ScopeCode: "test-tenant-code"})
+		rec := sendReq(http.MethodPut, "/internal/v1/workspaces/"+wsID+"/runtime-access", reqBody, internalToken)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 		}
 
-		if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-			t.Fatalf("get workspace: %v", err)
+		access, err := repos.FindWorkspaceRuntimeAccess(ctx, wsID)
+		if err != nil {
+			t.Fatalf("get runtime access: %v", err)
 		}
-		if ws.TenantCode == nil || *ws.TenantCode != "test-tenant-code" {
-			t.Errorf("expected tenant_code 'test-tenant-code', got %v", ws.TenantCode)
+		if access.ScopeType != domain.RuntimeAccessScopeTenant || access.ScopeCode != "test-tenant-code" || access.Status != domain.RuntimeAccessStatusActive {
+			t.Errorf("runtime access = %+v", access)
 		}
 
-		// 3. 解绑租户
-		rec = sendReq(http.MethodPost, "/internal/v1/workspaces/"+wsID+"/unbind-tenant", nil, internalToken)
+		rec = sendReq(http.MethodGet, "/internal/v1/workspaces/"+wsID+"/runtime-access", nil, internalToken)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		rec = sendReq(http.MethodPost, "/internal/v1/workspaces/"+wsID+"/runtime-access/disable", nil, internalToken)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected 204, got %d", rec.Code)
 		}
 
-		if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-			t.Fatalf("get workspace: %v", err)
+		access, err = repos.FindWorkspaceRuntimeAccess(ctx, wsID)
+		if err != nil {
+			t.Fatalf("get runtime access: %v", err)
 		}
-		if ws.TenantCode != nil {
-			t.Errorf("expected nil tenant_code, got %s", *ws.TenantCode)
+		if access.Status != domain.RuntimeAccessStatusDisabled {
+			t.Errorf("runtime access status = %s, want disabled", access.Status)
 		}
 	})
 }
@@ -416,8 +471,7 @@ type fakeInternalStore struct {
 	apiKeys                []domain.APIKey
 	listAPIKeysWorkspaceID string
 
-	boundWorkspaceID string
-	boundTenantCode  *string
+	runtimeAccess domain.WorkspaceRuntimeAccess
 
 	publishedModel PublishModelCatalogInput
 	publishCalled  bool
@@ -434,16 +488,42 @@ func (f *fakeInternalStore) SearchWorkspaces(context.Context, string, int) ([]do
 	return []domain.Workspace{f.workspace}, nil
 }
 
-func (f *fakeInternalStore) BindTenantCode(_ context.Context, id string, tenantCode *string) error {
-	f.boundWorkspaceID = id
-	f.boundTenantCode = tenantCode
-	f.workspace.ID = id
-	f.workspace.TenantCode = tenantCode
-	return nil
-}
-
 func (f *fakeInternalStore) FindWorkspaceByID(context.Context, string) (domain.Workspace, error) {
 	return f.workspace, nil
+}
+
+func (f *fakeInternalStore) FindWorkspaceRuntimeAccess(context.Context, string) (domain.WorkspaceRuntimeAccess, error) {
+	if f.runtimeAccess.WorkspaceID == "" {
+		return domain.WorkspaceRuntimeAccess{}, repository.ErrWorkspaceRuntimeAccessNotFound
+	}
+	return f.runtimeAccess, nil
+}
+
+func (f *fakeInternalStore) UpsertWorkspaceRuntimeAccess(_ context.Context, input repository.UpsertWorkspaceRuntimeAccessInput) (domain.WorkspaceRuntimeAccess, error) {
+	now := time.Now().UTC()
+	f.runtimeAccess = domain.WorkspaceRuntimeAccess{
+		WorkspaceID: input.WorkspaceID,
+		ScopeType:   input.ScopeType,
+		ScopeCode:   input.ScopeCode,
+		Status:      domain.RuntimeAccessStatusActive,
+		ActivatedAt: &now,
+		ActivatedBy: input.Actor,
+		DisabledAt:  nil,
+		DisabledBy:  "",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	return f.runtimeAccess, nil
+}
+
+func (f *fakeInternalStore) DisableWorkspaceRuntimeAccess(_ context.Context, workspaceID string, actor string) (domain.WorkspaceRuntimeAccess, error) {
+	now := time.Now().UTC()
+	f.runtimeAccess.WorkspaceID = workspaceID
+	f.runtimeAccess.Status = domain.RuntimeAccessStatusDisabled
+	f.runtimeAccess.DisabledAt = &now
+	f.runtimeAccess.DisabledBy = actor
+	f.runtimeAccess.UpdatedAt = now
+	return f.runtimeAccess, nil
 }
 
 func (f *fakeInternalStore) ListAPIKeysByWorkspace(_ context.Context, workspaceID string) ([]domain.APIKey, error) {

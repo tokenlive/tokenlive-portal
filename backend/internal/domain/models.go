@@ -9,6 +9,8 @@ import (
 
 type UserStatus string
 type WorkspaceStatus string
+type RuntimeAccessScopeType string
+type RuntimeAccessStatus string
 type MemberRole string
 type MemberStatus string
 type InvitationStatus string
@@ -31,6 +33,11 @@ const (
 	WorkspaceStatusActive   WorkspaceStatus = "active"
 	WorkspaceStatusBlocked  WorkspaceStatus = "blocked"
 	WorkspaceStatusDeleting WorkspaceStatus = "deleting"
+
+	RuntimeAccessScopeTenant RuntimeAccessScopeType = "tenant"
+
+	RuntimeAccessStatusActive   RuntimeAccessStatus = "active"
+	RuntimeAccessStatusDisabled RuntimeAccessStatus = "disabled"
 
 	MemberRoleOwner     MemberRole = "owner"
 	MemberRoleDeveloper MemberRole = "developer"
@@ -112,13 +119,25 @@ type Workspace struct {
 	Name            string          `gorm:"size:160;not null"`
 	Slug            string          `gorm:"size:160;not null;uniqueIndex:uk_workspaces_slug"`
 	OwnerUserID     string          `gorm:"size:32;not null;index"`
-	TenantCode      *string         `gorm:"size:64;default:null"`
 	Status          WorkspaceStatus `gorm:"size:32;not null"`
 	TrialGrantedAt  *time.Time
 	CreatedByUserID string         `gorm:"size:32;not null;index"`
 	CreatedAt       time.Time      `gorm:"not null"`
 	UpdatedAt       time.Time      `gorm:"not null"`
 	DeletedAt       gorm.DeletedAt `gorm:"index"`
+}
+
+type WorkspaceRuntimeAccess struct {
+	WorkspaceID string                 `gorm:"primaryKey;size:32"`
+	ScopeType   RuntimeAccessScopeType `gorm:"size:32;not null;index:idx_workspace_runtime_access_scope,priority:1"`
+	ScopeCode   string                 `gorm:"size:64;not null;index:idx_workspace_runtime_access_scope,priority:2"`
+	Status      RuntimeAccessStatus    `gorm:"size:32;not null;index"`
+	ActivatedAt *time.Time
+	ActivatedBy string `gorm:"size:128;not null;default:''"`
+	DisabledAt  *time.Time
+	DisabledBy  string    `gorm:"size:128;not null;default:''"`
+	CreatedAt   time.Time `gorm:"not null"`
+	UpdatedAt   time.Time `gorm:"not null"`
 }
 
 type WorkspaceMember struct {

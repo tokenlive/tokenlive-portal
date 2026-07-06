@@ -487,16 +487,16 @@ func TestConsoleServiceCreateAPIKeyReturnsSecretOnce(t *testing.T) {
 	}
 }
 
-func TestConsoleServiceCreateAPIKeySyncsRuntimeForBoundWorkspace(t *testing.T) {
+func TestConsoleServiceCreateAPIKeySyncsRuntimeForActiveRuntimeAccess(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	expiresAt := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
 	store := &fakeConsoleStore{
 		currentWorkspace: repository.CurrentWorkspaceResult{
-			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
 			Role:      domain.MemberRoleOwner,
 		},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 		createAPIKeyResult: repository.CreateAPIKeyResult{
 			APIKey: domain.APIKey{
 				ID:              "ak_1",
@@ -527,8 +527,8 @@ func TestConsoleServiceCreateAPIKeySyncsRuntimeForBoundWorkspace(t *testing.T) {
 	if syncer.upsert.UserID != "usr_1" || syncer.upsert.WorkspaceID != "wsp_1" {
 		t.Fatalf("upsert user/workspace = %+v", syncer.upsert)
 	}
-	if syncer.upsert.Tenant != "tenant_a" || syncer.upsert.UserTenant != "tenant_a" {
-		t.Fatalf("upsert tenant fields = %+v", syncer.upsert)
+	if syncer.upsert.ScopeType != "tenant" || syncer.upsert.ScopeCode != "tenant_a" {
+		t.Fatalf("upsert scope fields = %+v", syncer.upsert)
 	}
 	if syncer.upsert.Status != 1 || syncer.upsert.Quota != -1 || syncer.upsert.ExpiresAt != expiresAt.Unix() {
 		t.Fatalf("upsert runtime fields = %+v", syncer.upsert)
@@ -538,7 +538,7 @@ func TestConsoleServiceCreateAPIKeySyncsRuntimeForBoundWorkspace(t *testing.T) {
 	}
 }
 
-func TestConsoleServiceCreateAPIKeyDeletesRuntimeWhenWorkspaceUnbound(t *testing.T) {
+func TestConsoleServiceCreateAPIKeyDeletesRuntimeWhenRuntimeAccessInactive(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeConsoleStore{
@@ -579,12 +579,12 @@ func TestConsoleServiceCreateAPIKeyDeletesRuntimeWhenWorkspaceUnbound(t *testing
 func TestConsoleServiceCreateAPIKeyIgnoresRuntimeSyncFailure(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	store := &fakeConsoleStore{
 		currentWorkspace: repository.CurrentWorkspaceResult{
-			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
 			Role:      domain.MemberRoleOwner,
 		},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 		createAPIKeyResult: repository.CreateAPIKeyResult{
 			APIKey: domain.APIKey{
 				ID:              "ak_1",
@@ -617,7 +617,6 @@ func TestConsoleServiceCreateAPIKeyIgnoresRuntimeSyncFailure(t *testing.T) {
 func TestConsoleServiceAPIKeyStatusUpdateSyncsRuntime(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	tests := []struct {
 		name       string
 		call       func(*consoleService, context.Context, CurrentUser, string) (APIKeyResponse, error)
@@ -633,9 +632,10 @@ func TestConsoleServiceAPIKeyStatusUpdateSyncsRuntime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeConsoleStore{
 				currentWorkspace: repository.CurrentWorkspaceResult{
-					Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+					Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
 					Role:      domain.MemberRoleOwner,
 				},
+				runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 				updateAPIKeyResult: domain.APIKey{
 					ID:              "ak_1",
 					WorkspaceID:     "wsp_1",
@@ -677,12 +677,12 @@ func TestConsoleServiceAPIKeyStatusUpdateSyncsRuntime(t *testing.T) {
 func TestConsoleServiceStatusUpdateIgnoresRuntimeSyncFailure(t *testing.T) {
 	t.Parallel()
 
-	tenantCode := "tenant_a"
 	store := &fakeConsoleStore{
 		currentWorkspace: repository.CurrentWorkspaceResult{
-			Workspace: domain.Workspace{ID: "wsp_1", TenantCode: &tenantCode, Status: domain.WorkspaceStatusActive},
+			Workspace: domain.Workspace{ID: "wsp_1", Status: domain.WorkspaceStatusActive},
 			Role:      domain.MemberRoleOwner,
 		},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 		updateAPIKeyResult: domain.APIKey{
 			ID:              "ak_1",
 			WorkspaceID:     "wsp_1",
@@ -834,7 +834,6 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 	t.Parallel()
 
 	trialGrantedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	tenantCode := "tenant_a"
 	store := &fakeConsoleStore{
 		currentWorkspace: repository.CurrentWorkspaceResult{
 			Workspace: domain.Workspace{
@@ -842,7 +841,6 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 				Name:           "Dev",
 				Slug:           "dev",
 				Status:         domain.WorkspaceStatusActive,
-				TenantCode:     &tenantCode,
 				TrialGrantedAt: &trialGrantedAt,
 			},
 			Role: domain.MemberRoleBilling,
@@ -854,6 +852,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 			ID:     "ak_1",
 			Status: domain.APIKeyStatusRevoked,
 		}},
+		runtimeAccess: domain.WorkspaceRuntimeAccess{WorkspaceID: "wsp_1", ScopeType: domain.RuntimeAccessScopeTenant, ScopeCode: "tenant_a", Status: domain.RuntimeAccessStatusActive},
 	}
 	service, err := newConsoleService(store, "pepper", testTrialCreditConfig())
 	if err != nil {
@@ -885,7 +884,7 @@ func TestConsoleServiceOverviewMapsActivationState(t *testing.T) {
 		t.Fatalf("expected api key created")
 	}
 	if !got.Activation.RuntimeActivated {
-		t.Fatalf("expected runtime activated when workspace has tenant_code")
+		t.Fatalf("expected runtime activated when runtime access is active")
 	}
 	if got.Activation.FirstCallMade {
 		t.Fatalf("first_call_made should remain false until usage slice")
@@ -951,6 +950,8 @@ type fakeConsoleStore struct {
 	listWorkspaceID   string
 	listAPIKeysResult []domain.APIKey
 	listAPIKeysErr    error
+	runtimeAccess     domain.WorkspaceRuntimeAccess
+	runtimeAccessErr  error
 
 	createAPIKeyInput  repository.CreateAPIKeyWithAuditInput
 	createAPIKeyResult repository.CreateAPIKeyResult
@@ -977,6 +978,16 @@ func (f *fakeConsoleStore) ResolveCurrentWorkspace(_ context.Context, userID str
 		return repository.CurrentWorkspaceResult{}, f.currentWorkspaceErr
 	}
 	return f.currentWorkspace, nil
+}
+
+func (f *fakeConsoleStore) FindWorkspaceRuntimeAccess(context.Context, string) (domain.WorkspaceRuntimeAccess, error) {
+	if f.runtimeAccessErr != nil {
+		return domain.WorkspaceRuntimeAccess{}, f.runtimeAccessErr
+	}
+	if f.runtimeAccess.WorkspaceID == "" {
+		return domain.WorkspaceRuntimeAccess{}, repository.ErrWorkspaceRuntimeAccessNotFound
+	}
+	return f.runtimeAccess, nil
 }
 
 func (f *fakeConsoleStore) ListAPIKeysByWorkspace(_ context.Context, workspaceID string) ([]domain.APIKey, error) {

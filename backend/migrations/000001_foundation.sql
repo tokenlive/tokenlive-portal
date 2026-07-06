@@ -38,7 +38,6 @@ CREATE TABLE workspaces (
     name VARCHAR(160) NOT NULL,
     slug VARCHAR(160) NOT NULL,
     owner_user_id VARCHAR(32) NOT NULL,
-    tenant_code VARCHAR(64) NULL DEFAULT NULL,
     status VARCHAR(32) NOT NULL,
     trial_granted_at DATETIME(3) NULL,
     created_by_user_id VARCHAR(32) NOT NULL,
@@ -51,6 +50,22 @@ CREATE TABLE workspaces (
     KEY idx_workspaces_deleted_at (deleted_at),
     CONSTRAINT fk_workspaces_owner_user FOREIGN KEY (owner_user_id) REFERENCES users(id),
     CONSTRAINT fk_workspaces_created_by_user FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE workspace_runtime_accesses (
+    workspace_id VARCHAR(32) PRIMARY KEY,
+    scope_type VARCHAR(32) NOT NULL,
+    scope_code VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    activated_at DATETIME(3) NULL,
+    activated_by VARCHAR(128) NOT NULL DEFAULT '',
+    disabled_at DATETIME(3) NULL,
+    disabled_by VARCHAR(128) NOT NULL DEFAULT '',
+    created_at DATETIME(3) NOT NULL,
+    updated_at DATETIME(3) NOT NULL,
+    KEY idx_workspace_runtime_access_scope (scope_type, scope_code),
+    KEY idx_workspace_runtime_access_status (status),
+    CONSTRAINT fk_workspace_runtime_accesses_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE workspace_members (
@@ -202,6 +217,7 @@ DROP TABLE IF EXISTS workspace_model_permissions;
 DROP TABLE IF EXISTS api_keys;
 DROP TABLE IF EXISTS workspace_invitations;
 DROP TABLE IF EXISTS workspace_members;
+DROP TABLE IF EXISTS workspace_runtime_accesses;
 DROP TABLE IF EXISTS workspaces;
 DROP TABLE IF EXISTS account_identities;
 DROP TABLE IF EXISTS users;

@@ -187,6 +187,7 @@ type CreateRechargeRequestResponse struct {
 
 type consoleStore interface {
 	ResolveCurrentWorkspace(ctx context.Context, userID string) (repository.CurrentWorkspaceResult, error)
+	FindWorkspaceRuntimeAccess(ctx context.Context, workspaceID string) (domain.WorkspaceRuntimeAccess, error)
 	ListAPIKeysByWorkspace(ctx context.Context, workspaceID string) ([]domain.APIKey, error)
 	CreateAPIKeyWithAudit(ctx context.Context, input repository.CreateAPIKeyWithAuditInput) (repository.CreateAPIKeyResult, error)
 	UpdateAPIKeyStatusWithAudit(ctx context.Context, input repository.UpdateAPIKeyStatusWithAuditInput) (domain.APIKey, error)
@@ -280,7 +281,11 @@ func (s *consoleService) Overview(ctx context.Context, user CurrentUser) (Consol
 		trialExpiresAt = &expires
 	}
 	apiKeyCreated := len(keys) > 0
-	runtimeActivated := workspaceRuntimeActivated(current.Workspace)
+	runtimeAccess, err := s.store.FindWorkspaceRuntimeAccess(ctx, current.Workspace.ID)
+	if err != nil && !errors.Is(err, repository.ErrWorkspaceRuntimeAccessNotFound) {
+		return ConsoleOverviewResponse{}, mapConsoleRepositoryError(err)
+	}
+	runtimeActivated := workspaceRuntimeActivated(runtimeAccess)
 	firstCallMade := false
 
 	return ConsoleOverviewResponse{
@@ -451,7 +456,14 @@ func (s *consoleService) syncAPIKeyRuntimeBestEffort(ctx context.Context, worksp
 }
 
 func (s *consoleService) syncAPIKeyRuntime(ctx context.Context, workspace domain.Workspace, key domain.APIKey) error {
-	record, shouldUpsert := runtimeRecordFromAPIKey(workspace, key)
+	access, err := s.store.FindWorkspaceRuntimeAccess(ctx, workspace.ID)
+	if err != nil {
+		if !errors.Is(err, repository.ErrWorkspaceRuntimeAccessNotFound) {
+			return err
+		}
+		access = domain.WorkspaceRuntimeAccess{WorkspaceID: workspace.ID, Status: domain.RuntimeAccessStatusDisabled}
+	}
+	record, shouldUpsert := runtimeRecordFromAPIKey(workspace, access, key)
 	if shouldUpsert {
 		return s.runtimeSyncer.UpsertAPIKey(ctx, record)
 	}
@@ -566,8 +578,10 @@ func activationSteps(trialGranted bool, apiKeyCreated bool, runtimeActivated boo
 	}
 }
 
-func workspaceRuntimeActivated(workspace domain.Workspace) bool {
-	return workspace.TenantCode != nil && strings.TrimSpace(*workspace.TenantCode) != ""
+func workspaceRuntimeActivated(access domain.WorkspaceRuntimeAccess) bool {
+	return access.Status == domain.RuntimeAccessStatusActive &&
+		strings.TrimSpace(string(access.ScopeType)) != "" &&
+		strings.TrimSpace(access.ScopeCode) != ""
 }
 
 func activationStatus(done bool) ActivationStepStatus {

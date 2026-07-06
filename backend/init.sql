@@ -114,7 +114,6 @@ CREATE TABLE workspaces (
     name VARCHAR(160) NOT NULL COMMENT '工作空间名称',
     slug VARCHAR(160) NOT NULL COMMENT '工作空间URL标识',
     owner_user_id VARCHAR(32) NOT NULL COMMENT '所有者用户ID',
-    tenant_code VARCHAR(64) NULL DEFAULT NULL COMMENT '关联的Admin租户唯一英文编码',
     status VARCHAR(32) NOT NULL COMMENT '工作空间状态',
     trial_granted_at DATETIME(3) NULL COMMENT '试用金发放时间',
     created_by_user_id VARCHAR(32) NOT NULL COMMENT '创建人用户ID',
@@ -128,6 +127,22 @@ CREATE TABLE workspaces (
     CONSTRAINT fk_workspaces_owner_user FOREIGN KEY (owner_user_id) REFERENCES users(id),
     CONSTRAINT fk_workspaces_created_by_user FOREIGN KEY (created_by_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作空间表';
+
+CREATE TABLE workspace_runtime_accesses (
+    workspace_id VARCHAR(32) PRIMARY KEY COMMENT '工作空间ID',
+    scope_type VARCHAR(32) NOT NULL COMMENT '运行态授权作用域类型',
+    scope_code VARCHAR(64) NOT NULL COMMENT '运行态授权作用域编码',
+    status VARCHAR(32) NOT NULL COMMENT '运行态访问状态',
+    activated_at DATETIME(3) NULL COMMENT '开通时间',
+    activated_by VARCHAR(128) NOT NULL DEFAULT '' COMMENT '开通人',
+    disabled_at DATETIME(3) NULL COMMENT '停用时间',
+    disabled_by VARCHAR(128) NOT NULL DEFAULT '' COMMENT '停用人',
+    created_at DATETIME(3) NOT NULL COMMENT '创建时间',
+    updated_at DATETIME(3) NOT NULL COMMENT '更新时间',
+    KEY idx_workspace_runtime_access_scope (scope_type, scope_code),
+    KEY idx_workspace_runtime_access_status (status),
+    CONSTRAINT fk_workspace_runtime_accesses_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作空间运行态访问授权表';
 
 CREATE TABLE workspace_members (
     workspace_id VARCHAR(32) NOT NULL COMMENT '工作空间ID',

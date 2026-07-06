@@ -206,18 +206,18 @@ func TestResolveCurrentWorkspaceReturnsNotFoundWithoutActiveMembership(t *testin
 	}
 }
 
-func TestBindTenantCode(t *testing.T) {
+func TestWorkspaceRuntimeAccessLifecycle(t *testing.T) {
 	db := testDB(t)
 	repos := New(db)
 	ctx := context.Background()
 	suffix := uniqueSuffix(t)
 
-	email := "workspace-bind-" + suffix + "@example.com"
+	email := "workspace-runtime-access-" + suffix + "@example.com"
 	userResult, err := repos.CreateUserWithDefaultWorkspace(ctx, CreateUserWithWorkspaceInput{
-		DisplayName:   "Bind Test",
+		DisplayName:   "Runtime Access Test",
 		PrimaryEmail:  &email,
-		WorkspaceName: "Bind Workspace",
-		WorkspaceSlug: "bind-" + suffix,
+		WorkspaceName: "Runtime Access Workspace",
+		WorkspaceSlug: "runtime-access-" + suffix,
 	})
 	if err != nil {
 		t.Fatalf("create user: %v", err)
@@ -225,42 +225,45 @@ func TestBindTenantCode(t *testing.T) {
 
 	wsID := userResult.Workspace.ID
 
-	// 1. 验证初始状态 tenant_code 为空
-	var ws domain.Workspace
-	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-		t.Fatalf("get workspace: %v", err)
-	}
-	if ws.TenantCode != nil {
-		t.Errorf("expected nil TenantCode, got %s", *ws.TenantCode)
+	_, err = repos.FindWorkspaceRuntimeAccess(ctx, wsID)
+	if !errors.Is(err, ErrWorkspaceRuntimeAccessNotFound) {
+		t.Fatalf("initial runtime access err = %v, want ErrWorkspaceRuntimeAccessNotFound", err)
 	}
 
-	// 2. 绑定租户
-	tenant := "company-a"
-	if err := repos.BindTenantCode(ctx, wsID, &tenant); err != nil {
-		t.Fatalf("bind tenant failed: %v", err)
+	access, err := repos.UpsertWorkspaceRuntimeAccess(ctx, UpsertWorkspaceRuntimeAccessInput{
+		WorkspaceID: wsID,
+		ScopeType:   domain.RuntimeAccessScopeTenant,
+		ScopeCode:   "company-a",
+		Actor:       "admin",
+	})
+	if err != nil {
+		t.Fatalf("activate runtime access: %v", err)
+	}
+	if access.WorkspaceID != wsID || access.ScopeType != domain.RuntimeAccessScopeTenant || access.ScopeCode != "company-a" || access.Status != domain.RuntimeAccessStatusActive {
+		t.Fatalf("runtime access = %+v", access)
+	}
+	if access.ActivatedAt == nil || access.ActivatedBy != "admin" || access.DisabledAt != nil || access.DisabledBy != "" {
+		t.Fatalf("runtime access audit fields = %+v", access)
 	}
 
-	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-		t.Fatalf("get workspace: %v", err)
+	access, err = repos.DisableWorkspaceRuntimeAccess(ctx, wsID, "admin")
+	if err != nil {
+		t.Fatalf("disable runtime access: %v", err)
 	}
-	if ws.TenantCode == nil || *ws.TenantCode != tenant {
-		t.Errorf("expected TenantCode %s, got %+v", tenant, ws.TenantCode)
-	}
-
-	// 3. 解绑租户
-	if err := repos.BindTenantCode(ctx, wsID, nil); err != nil {
-		t.Fatalf("unbind tenant failed: %v", err)
+	if access.Status != domain.RuntimeAccessStatusDisabled || access.DisabledAt == nil || access.DisabledBy != "admin" {
+		t.Fatalf("disabled runtime access = %+v", access)
 	}
 
-	if err := db.First(&ws, "id = ?", wsID).Error; err != nil {
-		t.Fatalf("get workspace: %v", err)
-	}
-	if ws.TenantCode != nil {
-		t.Errorf("expected nil TenantCode after unbind, got %s", *ws.TenantCode)
+	_, err = repos.DisableWorkspaceRuntimeAccess(ctx, "non-existent-id", "admin")
+	if !errors.Is(err, ErrWorkspaceRuntimeAccessNotFound) {
+		t.Errorf("expected ErrWorkspaceRuntimeAccessNotFound, got %v", err)
 	}
 
-	// 4. 绑定不存在的 WorkspaceID
-	err = repos.BindTenantCode(ctx, "non-existent-id", &tenant)
+	_, err = repos.UpsertWorkspaceRuntimeAccess(ctx, UpsertWorkspaceRuntimeAccessInput{
+		WorkspaceID: "non-existent-id",
+		ScopeType:   domain.RuntimeAccessScopeTenant,
+		ScopeCode:   "company-a",
+	})
 	if !errors.Is(err, ErrWorkspaceNotFound) {
 		t.Errorf("expected ErrWorkspaceNotFound, got %v", err)
 	}
@@ -321,4 +324,3 @@ func TestSearchWorkspaces(t *testing.T) {
 		t.Errorf("expected only workspace 2, got %+v", results)
 	}
 }
-
